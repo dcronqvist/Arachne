@@ -61,13 +61,11 @@ This packet is sent by the client to the server, and is used to respond to the c
 
 #### **Connection Response (CRS)**
 
-This packet is sent by the server to the client, and is used to respond to a Connection Request packet. This response will either be a success or a failure, and upon failure, the packet will also contain a reason for the failure.
+This packet is sent by the server to the client, and is used to respond to a Connection Request packet. This response will contain a code that will indicate the outcome of the connection request.
 
 ```
 [packet type = 0x03] (1 byte)
-[success] (1 byte)
-[reason length] (uint32, 4 bytes)
-[reason string] (variable length, UTF-8 encoded)
+[code]               (1 byte)
 ```
 
 ### During connection packets
@@ -82,7 +80,6 @@ If no `KA` packets are received from a connected client within a specified timeo
 
 ```
 [packet type = 0x04] (1 byte)
-[client id] (8 bytes)
 ```
 
 #### **Application Data (AD)**

@@ -28,6 +28,7 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
     private ConnectionChallenge? _sentChallenge;
     private ulong _nextSequenceNumber = 1;
     private ulong _lastReceivedSequenceNumber = 0;
+    private DateTime _lastReceivedPacketTime;
 
     private Dictionary<ulong, (DateTime, ProtocolPacket)> _unackedReliableSequenceNumbers = new();
 
@@ -109,8 +110,15 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
         return packets;
     }
 
+    internal bool HasTimedOut(TimeSpan timeout)
+    {
+        return DateTime.Now - this._lastReceivedPacketTime > timeout;
+    }
+
     internal async Task ReceiveProtocolPacket(ProtocolPacket packet)
     {
+        this._lastReceivedPacketTime = DateTime.Now;
+
         if (packet.PacketType == ProtocolPacketType.ConnectionRequest)
         {
             // TODO: Check stuff
@@ -121,7 +129,11 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
 
             if (cr.ProtocolID != this._server._protocolID)
             {
+                var response = new ConnectionResponse(Constant.FAILURE_UNSUPPORTED_PROTOCOL_VERSION);
+                this._server.SendPacketTo(response, this.RemoteEndPoint);
+
                 this._server.TriggerConnFailedAuthEvent(this);
+                this._server.RemoveConnection(this);
                 return;
                 // TODO: Remove connection immediately.
             }
@@ -152,11 +164,11 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
             var challenge = this._sentChallenge!;
 
             var success = await this._server._authenticator!.AuthenticateAsync(this.ClientID, challenge.Challenge, challengeResponse.Response);
-            string? reason = null;
+            Constant code = Constant.SUCCESS;
 
             if (!success)
             {
-                reason = "Failed to authenticate.";
+                code = Constant.FAILURE_INVALID_AUTHENTICATION;
                 this._server.TriggerConnFailedAuthEvent(this);
             }
             else
@@ -167,7 +179,7 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
             if (this.TryMoveNext(ConnectionTransition.CHRReceived, out var newState))
             {
                 // Send connection request response, here we are authenticated and connected
-                var response = new ConnectionResponse(success ? (byte)1 : (byte)0, reason).SetChannel(ChannelType.ReliableOrdered);
+                var response = new ConnectionResponse(code).SetChannel(ChannelType.ReliableOrdered);
                 this._server.SendPacketTo(response, this.RemoteEndPoint);
 
                 this.MoveNext(ConnectionTransition.CRSSent);

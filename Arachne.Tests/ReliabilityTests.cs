@@ -22,8 +22,8 @@ public class ReliabilityTests
         var client = new Client(0, IAuthenticator.NoAuth, socketContextClient);
 
         await server.StartAsync();
-        var success = await client.ConnectAsync(25, "127.0.0.1", 8888, IAuthenticator.NoAuthResponse);
-        Assert.True(success);
+        var code = await client.ConnectAsync(25, "127.0.0.1", 8888, IAuthenticator.NoAuthResponse);
+        Assert.Equal(Constant.SUCCESS, code);
     }
 
     [Fact]
@@ -37,7 +37,7 @@ public class ReliabilityTests
         var client = new Client(0, IAuthenticator.NoAuth, socketContextClient);
 
         await server.StartAsync();
-        var success = await client.ConnectAsync(25, "127.0.0.1", 8888, PasswordAuth.Response("goodpass"));
-        Assert.True(success);
+        var code = await client.ConnectAsync(25, "127.0.0.1", 8888, PasswordAuth.Response("goodpass"));
+        Assert.Equal(Constant.SUCCESS, code);
     }
 }

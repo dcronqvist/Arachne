@@ -2,35 +2,25 @@ namespace Arachne.Packets;
 
 internal class ConnectionResponse : ProtocolPacket
 {
-    public byte Success { get; set; }
-    public string? Reason { get; set; }
+    public Constant Code { get; set; }
 
-    public ConnectionResponse(byte success, string? reason) : base(ProtocolPacketType.ConnectionResponse)
+    public ConnectionResponse(Constant code) : base(ProtocolPacketType.ConnectionResponse)
     {
-        this.Success = success;
-        this.Reason = reason;
+        this.Code = code;
     }
 
     public override void DeserializeProtocolPacket(BinaryReader reader)
     {
-        this.Success = reader.ReadByte();
-        if (this.Success == 0)
-        {
-            this.Reason = reader.ReadString();
-        }
+        this.Code = (Constant)reader.ReadUInt32();
     }
 
     public override void SerializeProtocolPacket(BinaryWriter writer)
     {
-        writer.Write(this.Success);
-        if (this.Success == 0)
-        {
-            writer.Write(this.Reason!);
-        }
+        writer.Write((uint)this.Code);
     }
 
     public bool IsSuccess()
     {
-        return this.Success == 1;
+        return this.Code == Constant.SUCCESS;
     }
 }

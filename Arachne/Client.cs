@@ -21,8 +21,9 @@ public sealed class Client
     public delegate Task<byte[]> GetChallengeResponse(ulong clientID, byte[] challenge);
 
     private ISocketContext _socket;
-    private IPEndPoint _connectedTo;
+    private IPEndPoint? _connectedTo;
     private uint _protocolID;
+    private DateTime _lastPacketSent;
 
     private BufferBlock<byte[]> _sendQueue;
     private Task? _sendTask;
@@ -66,7 +67,7 @@ public sealed class Client
         {
             if (now - time > timeout)
             {
-                packets.Add((packet, this._connectedTo));
+                packets.Add((packet, this._connectedTo!));
             }
         }
         return packets;
@@ -91,8 +92,9 @@ public sealed class Client
         }
     }
 
-    public async Task<bool> ConnectAsync(ulong clientID, string address, int port, GetChallengeResponse respondToChallenge, int timeout = 5000)
+    public async Task<Constant> ConnectAsync(ulong clientID, string address, int port, GetChallengeResponse respondToChallenge, int timeout = 5000)
     {
+        this._lastPacketSent = DateTime.Now;
         var tokenSource = new CancellationTokenSource();
         var token = tokenSource.Token;
         tokenSource.CancelAfter(timeout);
@@ -103,27 +105,37 @@ public sealed class Client
         var connectRequest = new ConnectionRequest(this._protocolID, 0, clientID).SetChannel(ChannelType.ReliableOrdered);
         this.SendPacket(connectRequest);
 
-        var response = await this.ReceivePacketAsync<ConnectionChallenge>(token);
+        var response = await this.ReceivePacketAsync<ProtocolPacket>(token);
 
         if (response is null)
         {
-            return false;
+            return Constant.NO_RESPONSE;
         }
 
-        var challResp = await respondToChallenge(clientID, response.Challenge);
-        var challRespPacket = new ConnectionChallengeResponse(challResp).SetChannel(ChannelType.ReliableOrdered);
-        this.SendPacket(challRespPacket);
+        ConnectionResponse? connectResponse = null;
 
-        var connectResponse = await this.ReceivePacketAsync<ConnectionResponse>(token);
+        if (response.PacketType == ProtocolPacketType.ConnectionChallenge)
+        {
+            var challenge = (ConnectionChallenge)response;
+            var challResp = await respondToChallenge(clientID, challenge.Challenge);
+            var challRespPacket = new ConnectionChallengeResponse(challResp).SetChannel(ChannelType.ReliableOrdered);
+            this.SendPacket(challRespPacket);
+            connectResponse = await this.ReceivePacketAsync<ConnectionResponse>(token);
+        }
+        else
+        {
+            connectResponse = (ConnectionResponse)response;
+        }
+
 
         if (connectResponse is null)
         {
-            return false;
+            return Constant.NO_RESPONSE;
         }
 
         if (!connectResponse.IsSuccess())
         {
-            return false;
+            return connectResponse.Code;
         }
 
         this._connectedTo = new IPEndPoint(IPAddress.Parse(address), port);
@@ -133,7 +145,8 @@ public sealed class Client
         var loopToken = this._cts.Token;
         this._receiveTask = Task.Run(() => this.ReceiveLoopAsync(loopToken));
         this._sendTask = Task.Run(() => this.SendLoopAsync(loopToken));
-        _ = Task.Run(() => this.ReliabilityLoopAsync(token));
+        _ = Task.Run(() => this.ReliabilityLoopAsync(loopToken));
+        _ = Task.Run(() => this.KeepAliveLoopAsync(loopToken));
 
 
         while (!this._readyToSend || !this._readyToReceive)
@@ -141,7 +154,20 @@ public sealed class Client
             await Task.Delay(100);
         }
 
-        return true;
+        return Constant.SUCCESS;
+    }
+
+    private async Task KeepAliveLoopAsync(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            var now = DateTime.Now;
+            if (now - this._lastPacketSent > TimeSpan.FromSeconds(5))
+            {
+                this.SendPacket(new ConnectionKeepAlive().SetChannel(ChannelType.UnreliableUnordered));
+            }
+            await Task.Delay(1000);
+        }
     }
 
     private async Task<ReceiveResult> ReceiveAsync(CancellationToken token)
@@ -193,6 +219,7 @@ public sealed class Client
         {
             // If the sending thread is not running, just send it synchronously
             this._socket.SendAsClient(data);
+            this._lastPacketSent = DateTime.Now;
         }
     }
 
@@ -203,19 +230,20 @@ public sealed class Client
             this._readyToSend = true;
             var data = await this._sendQueue.ReceiveAsync(token);
             this._socket.SendAsClient(data);
+            this._lastPacketSent = DateTime.Now;
         }
 
         this._readyToSend = false;
     }
 
-    protected void OnReceive(byte[] data)
+    private void OnReceive(byte[] data)
     {
         // Handle received data
         using var ms = new MemoryStream(data);
         using var reader = new BinaryReader(ms);
 
         var packet = ProtocolPacket.Deserialize(reader);
-        _ = this.ProcessPacket(packet);
+        this.ProcessPacket(packet);
     }
 
     private bool FollowsOrder(ulong sequenceNumber)
@@ -228,7 +256,7 @@ public sealed class Client
         this._lastReceivedSequenceNumber = sequenceNumber;
     }
 
-    private async Task ProcessPacket(ProtocolPacket packet)
+    private void ProcessPacket(ProtocolPacket packet)
     {
         if (packet.Channel == ChannelType.ReliableOrdered || packet.Channel == ChannelType.UnreliableOrdered)
         {
@@ -247,10 +275,10 @@ public sealed class Client
             this.RegisterReliableSequenceNumberAcked(packet.GetAckedSequenceNumbers());
         }
 
-        await this.ReceivePacket(packet);
+        this.ReceivePacket(packet);
     }
 
-    private async Task ReceivePacket(ProtocolPacket packet)
+    private void ReceivePacket(ProtocolPacket packet)
     {
         // TODO: Handle packet
 
@@ -267,12 +295,14 @@ public sealed class Client
         if (packet.PacketType == ProtocolPacketType.ApplicationData)
         {
             var appData = packet as ApplicationData;
-            this.ReceivedData?.Invoke(this, new ReceivedDataClientEventArgs(appData.Data, this._connectedTo));
+            this.ReceivedData?.Invoke(this, new ReceivedDataClientEventArgs(appData!.Data, this._connectedTo!));
         }
     }
 
     internal void SendPacket(ProtocolPacket packet)
     {
+        this._lastPacketSent = DateTime.Now;
+
         packet.SetSequenceNumber(this.GetNextSequenceNumber());
 
         using var ms = new MemoryStream();

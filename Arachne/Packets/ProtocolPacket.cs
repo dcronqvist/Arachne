@@ -108,7 +108,7 @@ internal abstract class ProtocolPacket
             case ProtocolPacketType.ConnectionChallengeResponse:
                 return new ConnectionChallengeResponse(new byte[0]);
             case ProtocolPacketType.ConnectionResponse:
-                return new ConnectionResponse(0, null);
+                return new ConnectionResponse(Constant.SUCCESS);
             // case ProtocolPacketType.ConnectionKeepAlive:
             //     return new ConnectionKeepAlive();
             case ProtocolPacketType.ApplicationData:

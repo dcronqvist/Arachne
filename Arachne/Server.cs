@@ -96,10 +96,36 @@ public sealed class Server
         this._receiveTask = Task.Run(() => this.ReceiveLoopAsync(token));
         this._sendTask = Task.Run(() => this.SendLoopAsync(token));
         _ = Task.Run(() => this.ReliabilityLoopAsync(token));
+        _ = Task.Run(() => this.CheckTimedOutClientsLoopAsync(token));
 
         while (!this._readyToSend || !this._readyToReceive)
         {
             await Task.Delay(100);
+        }
+    }
+
+    private async Task CheckTimedOutClientsLoopAsync(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            await Task.Delay(1000);
+            var connsTimedout = new List<RemoteConnection>();
+
+            this._connections.LockedAction(c =>
+            {
+                foreach (var conn in c!.Values)
+                {
+                    if (conn.HasTimedOut(TimeSpan.FromSeconds(10)))
+                    {
+                        connsTimedout.Add(conn);
+                    }
+                }
+            });
+
+            foreach (var conn in connsTimedout)
+            {
+                this.DisconnectClient(conn);
+            }
         }
     }
 
