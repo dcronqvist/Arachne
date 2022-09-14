@@ -70,7 +70,7 @@ This packet is sent by the server to the client, and is used to respond to a Con
 
 ### During connection packets
 
-#### **Connection Keep Alive (KA)** (not implemented yet)
+#### **Connection Keep Alive (KA)**
 
 This packet is sent by the client to the server, and is used to keep the connection alive. The server will not respond to this packet, it is only for the server to know if the client is still alive and connected.
 
