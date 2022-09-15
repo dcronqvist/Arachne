@@ -170,13 +170,14 @@ public class ConnectTests
         var server = new Server(10, "127.0.0.1", 8896, 5, IAuthenticator.NoAuth);
         var client = new Client(5, IAuthenticator.NoAuth);
 
+        server.ConnectionEstablished += (s, e) => { Console.WriteLine($"Server: Connection Established to {e.Connection.RemoteEndPoint}"); };
         server.ConnectionTerminated += (s, e) => { Console.WriteLine($"{e.Connection.RemoteEndPoint} terminated"); };
 
         await server.StartAsync(); // Don't start the server
         var code = await client.ConnectAsync(25, "127.0.0.1", 8896, IAuthenticator.NoAuthResponse, timeout: 2000);
         Assert.Equal(Constant.SUCCESS, code);
 
-        await Task.Delay(15000);
+        await Task.Delay(14000);
 
         Assert.NotNull(server.GetClientConnection(25));
     }

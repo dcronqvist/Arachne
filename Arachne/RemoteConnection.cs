@@ -28,7 +28,7 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
     private ConnectionChallenge? _sentChallenge;
     private ulong _nextSequenceNumber = 1;
     private ulong _lastReceivedSequenceNumber = 0;
-    private DateTime _lastReceivedPacketTime;
+    internal DateTime _lastReceivedPacketTime;
 
     private Dictionary<ulong, (DateTime, ProtocolPacket)> _unackedReliableSequenceNumbers = new();
 
@@ -117,29 +117,27 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
 
     internal async Task ReceiveProtocolPacket(ProtocolPacket packet)
     {
-        this._lastReceivedPacketTime = DateTime.Now;
-
         if (packet.PacketType == ProtocolPacketType.ConnectionRequest)
         {
-            // TODO: Check stuff
-            var cr = (ConnectionRequest)packet;
-            this.ClientID = cr.ClientID;
-
-            this._server.TriggerConnRequestedEvent(this);
-
-            if (cr.ProtocolID != this._server._protocolID)
-            {
-                var response = new ConnectionResponse(Constant.FAILURE_UNSUPPORTED_PROTOCOL_VERSION);
-                this._server.SendPacketTo(response, this.RemoteEndPoint);
-
-                this._server.TriggerConnFailedAuthEvent(this);
-                this._server.RemoveConnection(this);
-                return;
-                // TODO: Remove connection immediately.
-            }
-
             if (this.TryMoveNext(ConnectionTransition.CRReceived, out var newState))
             {
+                // TODO: Check stuff
+                var cr = (ConnectionRequest)packet;
+                this.ClientID = cr.ClientID;
+
+                this._server.TriggerConnRequestedEvent(this);
+
+                if (cr.ProtocolID != this._server._protocolID)
+                {
+                    var response = new ConnectionResponse(Constant.FAILURE_UNSUPPORTED_PROTOCOL_VERSION);
+                    this._server.SendPacketTo(response, this.RemoteEndPoint);
+
+                    this._server.TriggerConnFailedAuthEvent(this);
+                    this._server.RemoveConnection(this);
+                    return;
+                    // TODO: Remove connection immediately.
+                }
+
                 // Send challenge
                 var challenge = await this._server._authenticator!.GetChallengeForClientAsync(this.ClientID);
                 var challengePacket = (ConnectionChallenge)new ConnectionChallenge(challenge).SetChannel(ChannelType.ReliableOrdered);
@@ -159,25 +157,25 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
 
         if (packet.PacketType == ProtocolPacketType.ConnectionChallengeResponse)
         {
-            // TODO: Check challenge response
-            var challengeResponse = (ConnectionChallengeResponse)packet;
-            var challenge = this._sentChallenge!;
-
-            var success = await this._server._authenticator!.AuthenticateAsync(this.ClientID, challenge.Challenge, challengeResponse.Response);
-            Constant code = Constant.SUCCESS;
-
-            if (!success)
-            {
-                code = Constant.FAILURE_INVALID_AUTHENTICATION;
-                this._server.TriggerConnFailedAuthEvent(this);
-            }
-            else
-            {
-                this._server.TriggerConnEstablishedEvent(this);
-            }
-
             if (this.TryMoveNext(ConnectionTransition.CHRReceived, out var newState))
             {
+                // TODO: Check challenge response
+                var challengeResponse = (ConnectionChallengeResponse)packet;
+                var challenge = this._sentChallenge!;
+
+                var success = await this._server._authenticator!.AuthenticateAsync(this.ClientID, challenge.Challenge, challengeResponse.Response);
+                Constant code = Constant.SUCCESS;
+
+                if (!success)
+                {
+                    code = Constant.FAILURE_INVALID_AUTHENTICATION;
+                    this._server.TriggerConnFailedAuthEvent(this);
+                }
+                else
+                {
+                    this._server.TriggerConnEstablishedEvent(this);
+                }
+
                 // Send connection request response, here we are authenticated and connected
                 var response = new ConnectionResponse(code).SetChannel(ChannelType.ReliableOrdered);
                 this._server.SendPacketTo(response, this.RemoteEndPoint);

@@ -229,6 +229,7 @@ public sealed class Server
     private async Task ProcessPacket(ProtocolPacket packet, IPEndPoint sender)
     {
         var connection = this.GetConnectionForEndPoint(sender);
+        connection._lastReceivedPacketTime = DateTime.Now;
 
         if (packet.Channel == ChannelType.ReliableOrdered || packet.Channel == ChannelType.UnreliableOrdered)
         {
