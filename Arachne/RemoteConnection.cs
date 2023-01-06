@@ -127,7 +127,7 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
 
                 this._server.TriggerConnRequestedEvent(this);
 
-                if (cr.ProtocolID != this._server._protocolID)
+                if (cr.ProtocolID != this._server._protocolID && !this._server._supportedClientProtocolIDs.Contains(cr.ProtocolID))
                 {
                     var response = new ConnectionResponse(Constant.FAILURE_UNSUPPORTED_PROTOCOL_VERSION);
                     this._server.SendPacketTo(response, this.RemoteEndPoint);
@@ -140,7 +140,7 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
 
                 // Send challenge
                 var challenge = await this._server._authenticator!.GetChallengeForClientAsync(this.ClientID);
-                var challengePacket = (ConnectionChallenge)new ConnectionChallenge(challenge).SetChannel(ChannelType.ReliableOrdered);
+                var challengePacket = (ConnectionChallenge)new ConnectionChallenge(challenge).SetChannelType(ChannelType.ReliableOrdered);
 
                 this._sentChallenge = challengePacket;
 
@@ -177,7 +177,7 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
                 }
 
                 // Send connection request response, here we are authenticated and connected
-                var response = new ConnectionResponse(code).SetChannel(ChannelType.ReliableOrdered);
+                var response = new ConnectionResponse(code).SetChannelType(ChannelType.ReliableOrdered);
                 this._server.SendPacketTo(response, this.RemoteEndPoint);
 
                 this.MoveNext(ConnectionTransition.CRSSent);
@@ -196,7 +196,7 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
             if (this.TryMoveNext(ConnectionTransition.CTReceived, out var newState))
             {
                 // Send connection termination response (assume disconnected already)
-                var response = new ConnectionTerminationAck().SetChannel(ChannelType.ReliableOrdered);
+                var response = new ConnectionTerminationAck().SetChannelType(ChannelType.ReliableOrdered);
                 this._server.SendPacketTo(response, this.RemoteEndPoint);
 
                 this._server.TriggerClientDisconnectEvent(this);
@@ -221,7 +221,7 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
     {
         if (this.TryMoveNext(ConnectionTransition.CTSent, out var newState))
         {
-            var disconnect = new ConnectionTermination(reason).SetChannel(ChannelType.ReliableOrdered);
+            var disconnect = new ConnectionTermination(reason).SetChannelType(ChannelType.ReliableOrdered);
             this._server.SendPacketTo(disconnect, this.RemoteEndPoint);
         }
         else

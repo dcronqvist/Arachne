@@ -31,6 +31,7 @@ public sealed class Server
     private ISocketContext _listener;
     private IPEndPoint _listenEndPoint;
     internal uint _protocolID;
+    internal uint[] _supportedClientProtocolIDs;
 
     private int _maxConnections;
 
@@ -53,10 +54,10 @@ public sealed class Server
     public event EventHandler<ConnectionEventArgs>? ConnectionTerminated;
     public event EventHandler<ConnectionEventArgs>? ClientDisconnected;
 
-    public Server(int maxConns, string address, int port, uint protocolID, IAuthenticator authenticator) : this(maxConns, address, port, protocolID, authenticator, new UDPSocketContext())
+    public Server(int maxConns, string address, int port, uint protocolID, IAuthenticator authenticator, params uint[] supportedClientProtocols) : this(maxConns, address, port, protocolID, authenticator, new UDPSocketContext(), supportedClientProtocols)
     { }
 
-    public Server(int maxConns, string address, int port, uint protocolID, IAuthenticator authenticator, ISocketContext context)
+    public Server(int maxConns, string address, int port, uint protocolID, IAuthenticator authenticator, ISocketContext context, params uint[] supportedClientProtocols)
     {
         this._maxConnections = maxConns;
         this._listenEndPoint = new IPEndPoint(IPAddress.Parse(address), port);
@@ -66,6 +67,7 @@ public sealed class Server
         this._sendQueue = new BufferBlock<(byte[], IPEndPoint)>();
         this._authenticator = authenticator;
         this._connections = new(new());
+        this._supportedClientProtocolIDs = supportedClientProtocols;
     }
 
     internal void TriggerConnRequestedEvent(RemoteConnection rc)
@@ -106,26 +108,39 @@ public sealed class Server
 
     private async Task CheckTimedOutClientsLoopAsync(CancellationToken token)
     {
-        while (!token.IsCancellationRequested)
+        try
         {
-            await Task.Delay(1000);
-            var connsTimedout = new List<RemoteConnection>();
-
-            this._connections.LockedAction(c =>
+            while (!token.IsCancellationRequested)
             {
-                foreach (var conn in c!.Values)
+                await Task.Delay(1000);
+                var connsTimedout = new List<RemoteConnection>();
+
+                this._connections.LockedAction(c =>
                 {
-                    if (conn.HasTimedOut(TimeSpan.FromSeconds(10)))
+                    foreach (var conn in c!.Values)
                     {
-                        connsTimedout.Add(conn);
+                        if (conn.HasTimedOut(TimeSpan.FromSeconds(10)))
+                        {
+                            connsTimedout.Add(conn);
+                        }
                     }
-                }
-            });
+                });
 
-            foreach (var conn in connsTimedout)
-            {
-                this.DisconnectClient(conn);
+                foreach (var conn in connsTimedout)
+                {
+                    this.DisconnectClient(conn);
+                }
             }
+
+            this._readyToReceive = false;
+            this._readyToSend = false;
+        }
+        catch (Exception)
+        {
+            // stop
+            this._readyToReceive = false;
+            this._readyToSend = false;
+            return;
         }
     }
 
@@ -143,25 +158,39 @@ public sealed class Server
 
     private async Task ReliabilityLoopAsync(CancellationToken token)
     {
-        while (!token.IsCancellationRequested)
+        try
         {
-            var now = DateTime.Now;
-            var timeBeforeResend = TimeSpan.FromMilliseconds(500);
-
-            var toResend = new List<(ProtocolPacket, IPEndPoint)>();
-
-            var connections = this._connections.LockedAction(c => c is null ? new List<RemoteConnection>() : c.Values.ToList())!;
-
-            foreach (var connection in connections)
+            while (!token.IsCancellationRequested)
             {
-                var unacked = connection.GetUnackedPacketsOlderThan(timeBeforeResend);
-                foreach (var (p, d) in unacked)
+                var now = DateTime.Now;
+                var timeBeforeResend = TimeSpan.FromMilliseconds(500);
+
+                var toResend = new List<(ProtocolPacket, IPEndPoint)>();
+
+                var connections = this._connections.LockedAction(c => c is null ? new List<RemoteConnection>() : c.Values.ToList())!;
+
+                foreach (var connection in connections)
                 {
-                    this.ResendReliablePacket(p, d);
+                    var unacked = connection.GetUnackedPacketsOlderThan(timeBeforeResend);
+                    foreach (var (p, d) in unacked)
+                    {
+                        this.ResendReliablePacket(p, d);
+                    }
                 }
+
+                await Task.Delay(100);
             }
 
-            await Task.Delay(100);
+            // stop
+            this._readyToReceive = false;
+            this._readyToSend = false;
+        }
+        catch (Exception)
+        {
+            // stop
+            this._readyToReceive = false;
+            this._readyToSend = false;
+            return;
         }
     }
 
@@ -178,6 +207,8 @@ public sealed class Server
                     this.OnReceive(result.Data, result.Sender);
                 });
             }
+
+            this._readyToReceive = false;
         }
         catch (Exception)
         {
@@ -207,6 +238,8 @@ public sealed class Server
                 var (data, endPoint) = await this._sendQueue.ReceiveAsync(token);
                 this._listener.SendTo(data, endPoint);
             }
+
+            this._readyToSend = false;
         }
         catch (Exception)
         {
@@ -353,7 +386,7 @@ public sealed class Server
     public void DisconnectClient(RemoteConnection conn)
     {
         conn.MoveNext(ConnectionTransition.CTSent);
-        var termination = new ConnectionTermination("Server terminated connection").SetChannel(ChannelType.ReliableOrdered);
+        var termination = new ConnectionTermination("Server terminated connection").SetChannelType(ChannelType.ReliableOrdered);
         this.SendPacketTo(termination, conn.RemoteEndPoint);
 
         this.RemoveConnection(conn);
@@ -372,7 +405,7 @@ public sealed class Server
 
     public void SendToClient(byte[] data, RemoteConnection connection, ChannelType channel)
     {
-        var packet = new ApplicationData(data).SetChannel(channel);
+        var packet = new ApplicationData(data).SetChannelType(channel);
         this.SendPacketTo(packet, connection.RemoteEndPoint);
     }
 }

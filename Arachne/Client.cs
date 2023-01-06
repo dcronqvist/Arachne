@@ -96,13 +96,13 @@ public sealed class Client
     {
         this._lastPacketSent = DateTime.Now;
         var tokenSource = new CancellationTokenSource();
-        var token = tokenSource.Token;
         tokenSource.CancelAfter(timeout);
+        var token = tokenSource.Token;
 
         this._socket.Connect(new IPEndPoint(IPAddress.Parse(address), port));
 
         // Send connect request
-        var connectRequest = new ConnectionRequest(this._protocolID, 0, clientID).SetChannel(ChannelType.ReliableOrdered);
+        var connectRequest = new ConnectionRequest(this._protocolID, 0, clientID).SetChannelType(ChannelType.ReliableOrdered);
         this.SendPacket(connectRequest);
 
         var response = await this.ReceivePacketAsync<ProtocolPacket>(token);
@@ -118,7 +118,7 @@ public sealed class Client
         {
             var challenge = (ConnectionChallenge)response;
             var challResp = await respondToChallenge(clientID, challenge.Challenge);
-            var challRespPacket = new ConnectionChallengeResponse(challResp).SetChannel(ChannelType.ReliableOrdered);
+            var challRespPacket = new ConnectionChallengeResponse(challResp).SetChannelType(ChannelType.ReliableOrdered);
             this.SendPacket(challRespPacket);
             connectResponse = await this.ReceivePacketAsync<ConnectionResponse>(token);
         }
@@ -164,7 +164,7 @@ public sealed class Client
             var now = DateTime.Now;
             if (now - this._lastPacketSent > TimeSpan.FromSeconds(5))
             {
-                this.SendPacket(new ConnectionKeepAlive().SetChannel(ChannelType.UnreliableUnordered));
+                this.SendPacket(new ConnectionKeepAlive().SetChannelType(ChannelType.UnreliableUnordered));
             }
             await Task.Delay(1000);
         }
@@ -285,7 +285,7 @@ public sealed class Client
         if (packet.PacketType == ProtocolPacketType.ConnectionTermination)
         {
             // Server wants to terminate the connection. Acknowledge
-            var ack = new ConnectionTerminationAck().SetChannel(ChannelType.ReliableOrdered);
+            var ack = new ConnectionTerminationAck().SetChannelType(ChannelType.ReliableOrdered);
             this.SendPacket(ack);
             // TODO: Close client.
             this.DisconnectedByServer?.Invoke(this, EventArgs.Empty);
@@ -409,13 +409,13 @@ public sealed class Client
 
     public void SendToServer(byte[] data, ChannelType channel)
     {
-        var packet = new ApplicationData(data).SetChannel(channel);
+        var packet = new ApplicationData(data).SetChannelType(channel);
         this.SendPacket(packet);
     }
 
     public void Disconnect()
     {
-        var packet = new ConnectionTermination("Disconnect").SetChannel(ChannelType.ReliableOrdered);
+        var packet = new ConnectionTermination("Disconnect").SetChannelType(ChannelType.ReliableOrdered);
         this._readyToSend = false;
         this.SendPacket(packet);
         this._socket.Close();

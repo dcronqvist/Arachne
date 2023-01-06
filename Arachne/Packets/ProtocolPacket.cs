@@ -2,35 +2,48 @@ namespace Arachne.Packets;
 
 internal enum ProtocolPacketType : byte
 {
-    ConnectionRequest = 0,
-    ConnectionChallenge = 1,
-    ConnectionChallengeResponse = 2,
-    ConnectionResponse = 3,
-    ConnectionKeepAlive = 4,
-    ApplicationData = 5,
-    ConnectionTermination = 6,
-    ConnectionTerminationAck = 7
+    ConnectionRequest = 0b000,
+    ConnectionChallenge = 0b001,
+    ConnectionChallengeResponse = 0b010,
+    ConnectionResponse = 0b011,
+    ConnectionKeepAlive = 0b100,
+    ApplicationData = 0b101,
+    ConnectionTermination = 0b110,
+    ConnectionTerminationAck = 0b111
 }
 
 public enum ChannelType : byte
 {
-    ReliableOrdered = 0,
-    ReliableUnordered = 1,
-    UnreliableOrdered = 2,
-    UnreliableUnordered = 3
+    ReliableOrdered = 0b00 << 3,
+    ReliableUnordered = 0b01 << 3,
+    UnreliableOrdered = 0b10 << 3,
+    UnreliableUnordered = 0b11 << 3
 }
 
 internal abstract class ProtocolPacket
 {
-    public ProtocolPacketType PacketType { get; set; }
-    public ChannelType Channel { get; set; }
+    public byte PacketTypeAndChannel { get; set; }
+    public ProtocolPacketType PacketType => (ProtocolPacketType)(this.PacketTypeAndChannel & 0b111);
+    public ChannelType Channel => (ChannelType)(this.PacketTypeAndChannel & 0b11111000);
     public ulong SequenceNumber { get; set; }
     public ulong SequenceAck { get; set; }
     public uint AckBits { get; set; } // All sequence numbers up to 32 before SequenceAck are acknowledged
 
     public ProtocolPacket(ProtocolPacketType packetType)
     {
-        this.PacketType = packetType;
+        this.SetPacketType(packetType);
+    }
+
+    public ProtocolPacket SetPacketType(ProtocolPacketType packetType)
+    {
+        this.PacketTypeAndChannel = (byte)((this.PacketTypeAndChannel & 0b11111000) | (byte)packetType);
+        return this;
+    }
+
+    public ProtocolPacket SetChannelType(ChannelType channelType)
+    {
+        this.PacketTypeAndChannel = (byte)((this.PacketTypeAndChannel & 0b111) | (byte)channelType);
+        return this;
     }
 
     public ulong[] GetAckedSequenceNumbers()
@@ -45,12 +58,6 @@ internal abstract class ProtocolPacket
         }
 
         return acked.ToArray();
-    }
-
-    public ProtocolPacket SetChannel(ChannelType channel)
-    {
-        this.Channel = channel;
-        return this;
     }
 
     internal ProtocolPacket SetSequenceNumber(ulong sequenceNumber)
@@ -73,8 +80,7 @@ internal abstract class ProtocolPacket
 
     public void Serialize(BinaryWriter writer)
     {
-        writer.Write((byte)this.PacketType);
-        writer.Write((byte)this.Channel);
+        writer.Write(this.PacketTypeAndChannel);
         writer.Write(this.SequenceNumber);
         writer.Write(this.SequenceAck);
         writer.Write(this.AckBits);
@@ -83,13 +89,14 @@ internal abstract class ProtocolPacket
 
     public static ProtocolPacket Deserialize(BinaryReader reader)
     {
-        ProtocolPacketType ppt = (ProtocolPacketType)reader.ReadByte();
-        ChannelType ppc = (ChannelType)reader.ReadByte();
+        byte packetTypeAndChannel = reader.ReadByte();
+        ProtocolPacketType ppt = (ProtocolPacketType)(packetTypeAndChannel & 0b111);
+        ChannelType ppc = (ChannelType)(packetTypeAndChannel & 0b11111000);
         ulong seq = reader.ReadUInt64();
         ulong seqAck = reader.ReadUInt64();
         uint ackBits = reader.ReadUInt32();
         var packet = CreatePacketOfType(ppt);
-        packet.SetChannel(ppc);
+        packet.SetChannelType(ppc);
         packet.SetSequenceNumber(seq);
         packet.SetLatestSequenceAck(seqAck);
         packet.SetAckBits(ackBits);
@@ -109,8 +116,8 @@ internal abstract class ProtocolPacket
                 return new ConnectionChallengeResponse(new byte[0]);
             case ProtocolPacketType.ConnectionResponse:
                 return new ConnectionResponse(Constant.SUCCESS);
-            // case ProtocolPacketType.ConnectionKeepAlive:
-            //     return new ConnectionKeepAlive();
+            case ProtocolPacketType.ConnectionKeepAlive:
+                return new ConnectionKeepAlive();
             case ProtocolPacketType.ApplicationData:
                 return new ApplicationData(new byte[0]);
             case ProtocolPacketType.ConnectionTermination:

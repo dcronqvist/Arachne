@@ -43,7 +43,7 @@ internal class FakeNetwork
 
     internal async Task<(byte[], IPEndPoint)> ReceiveAsync(IPEndPoint receiver, CancellationToken token)
     {
-        while (true)
+        while (!token.IsCancellationRequested)
         {
             var x = this.inNetwork.LockedAction<(byte[], IPEndPoint, IPEndPoint)?>(q =>
             {
@@ -70,6 +70,8 @@ internal class FakeNetwork
 
             await Task.Delay(1);
         }
+
+        throw new OperationCanceledException();
     }
 }
 
