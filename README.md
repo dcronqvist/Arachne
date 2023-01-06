@@ -33,10 +33,10 @@ This packet is sent by the client to the server, and is used to request a connec
 If the given `protocol id` and `protocol version` is not supported by the server, the server will respond with a `CRS` packet with failure and reason `Unsupported protocol version`.
 
 ```
-[packet type = 0x00] (1 byte)
-[protocol id]        (4 bytes)
-[protocol version]   (4 bytes)
-[client id]          (8 bytes)
+[packet type & channel = 0x00]  (1 byte, 0b(00000 channel)(000 type))
+[protocol id]                   (4 bytes)
+[protocol version]              (4 bytes)
+[client id]                     (8 bytes)
 ```
 
 #### **Connection Challenge (CH)**
