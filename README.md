@@ -2,7 +2,7 @@
 
 ## Protocol
 
-The Arachne protocol is a simple protocol that allows for clients to connect to an authorative server using some kind of identification, and will then allow the client and server to communicate with each other. This protocol is very simple and is primarily designed to be used in games, but could potentially be used in other applications as well.
+The Arachne protocol is a simple protocol that allows for clients to connect to an authoritative server using some kind of identification, and will then allow the client and server to communicate with each other. This protocol is very simple and is primarily designed to be used in games, but could potentially be used in other applications as well.
 
 It uses UDP for all communication and allows for 4 different ways of communication:
 
@@ -65,7 +65,7 @@ There 2 different ways to allow for a connection to be established.
 
 - **No authentication** - This is the simplest way of connecting, and is used when the server does not require any kind of authentication from the client. The client will simply send a `CR` packet to the server, and the server will respond with a `CRS` packet either allowing or denying the connection.
 
-- **With authentication** - This is a more complex way of connecting, and is ued when the server requires some kind of authentication from the client. The client will send a `CR` packet to the server, and the server will respond with a `CH` packet, which will contain a challenge for the client. The client will then respond with a `CHR` packet, which will contain the challenge response. The server will then respond with a `CRS` packet either allowing or denying the connection. The authentication method is up to the developer to implement, however, there are some examples provided if needed.
+- **With authentication** - This is a more complex way of connecting, and is used when the server requires some kind of authentication from the client. The client will send a `CR` packet to the server, and the server will respond with a `CH` packet, which will contain a challenge for the client. The client will then respond with a `CHR` packet, which will contain the challenge response. The server will then respond with a `CRS` packet either allowing or denying the connection. The authentication method is up to the developer to implement, however, there are some examples provided if needed.
 
 #### **Connection Request (CR)**
 
