@@ -1,4 +1,4 @@
-# Arachne [![.NET Tests](https://github.com/dcronqvist/Arachne/actions/workflows/tests.yml/badge.svg)](https://github.com/dcronqvist/Arachne/actions/workflows/tests.yml)
+# 🕷️ Arachne [![.NET Tests](https://github.com/dcronqvist/Arachne/actions/workflows/tests.yml/badge.svg)](https://github.com/dcronqvist/Arachne/actions/workflows/tests.yml)
 
 ## Protocol
 
