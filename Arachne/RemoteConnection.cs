@@ -129,7 +129,7 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
 
                 if (cr.ProtocolID != this._server._protocolID && !this._server._supportedClientProtocolIDs.Contains(cr.ProtocolID))
                 {
-                    var response = new ConnectionResponse(Constant.FAILURE_UNSUPPORTED_PROTOCOL_VERSION);
+                    var response = new ConnectionResponse(Constant.FAILURE_UNSUPPORTED_PROTOCOL_VERSION).SetChannelType(ChannelType.ReliableOrdered);
                     this._server.SendPacketTo(response, this.RemoteEndPoint);
 
                     this._server.TriggerConnFailedAuthEvent(this);

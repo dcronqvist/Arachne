@@ -2,29 +2,29 @@ namespace Arachne.Packets;
 
 internal enum ProtocolPacketType : byte
 {
-    ConnectionRequest = 0b000,
-    ConnectionChallenge = 0b001,
-    ConnectionChallengeResponse = 0b010,
-    ConnectionResponse = 0b011,
-    ConnectionKeepAlive = 0b100,
-    ApplicationData = 0b101,
-    ConnectionTermination = 0b110,
-    ConnectionTerminationAck = 0b111
+    ConnectionRequest = 0b0000,
+    ConnectionChallenge = 0b0001,
+    ConnectionChallengeResponse = 0b0010,
+    ConnectionResponse = 0b0011,
+    ConnectionKeepAlive = 0b0100,
+    ApplicationData = 0b0101,
+    ConnectionTermination = 0b0110,
+    ConnectionTerminationAck = 0b0111
 }
 
 public enum ChannelType : byte
 {
-    ReliableOrdered = 0b00 << 3,
-    ReliableUnordered = 0b01 << 3,
-    UnreliableOrdered = 0b10 << 3,
-    UnreliableUnordered = 0b11 << 3
+    ReliableOrdered = 0b00 << 4,
+    ReliableUnordered = 0b01 << 4,
+    UnreliableOrdered = 0b10 << 4,
+    UnreliableUnordered = 0b11 << 4
 }
 
 internal abstract class ProtocolPacket
 {
     public byte PacketTypeAndChannel { get; set; }
-    public ProtocolPacketType PacketType => (ProtocolPacketType)(this.PacketTypeAndChannel & 0b111);
-    public ChannelType Channel => (ChannelType)(this.PacketTypeAndChannel & 0b11111000);
+    public ProtocolPacketType PacketType => (ProtocolPacketType)(this.PacketTypeAndChannel & 0b1111);
+    public ChannelType Channel => (ChannelType)(this.PacketTypeAndChannel & 0b11110000);
     public ulong SequenceNumber { get; set; }
     public ulong SequenceAck { get; set; }
     public uint AckBits { get; set; } // All sequence numbers up to 32 before SequenceAck are acknowledged
@@ -36,13 +36,13 @@ internal abstract class ProtocolPacket
 
     public ProtocolPacket SetPacketType(ProtocolPacketType packetType)
     {
-        this.PacketTypeAndChannel = (byte)((this.PacketTypeAndChannel & 0b11111000) | (byte)packetType);
+        this.PacketTypeAndChannel = (byte)((this.PacketTypeAndChannel & 0b11110000) | (byte)packetType);
         return this;
     }
 
     public ProtocolPacket SetChannelType(ChannelType channelType)
     {
-        this.PacketTypeAndChannel = (byte)((this.PacketTypeAndChannel & 0b111) | (byte)channelType);
+        this.PacketTypeAndChannel = (byte)((this.PacketTypeAndChannel & 0b00001111) | (byte)channelType);
         return this;
     }
 
@@ -90,8 +90,8 @@ internal abstract class ProtocolPacket
     public static ProtocolPacket Deserialize(BinaryReader reader)
     {
         byte packetTypeAndChannel = reader.ReadByte();
-        ProtocolPacketType ppt = (ProtocolPacketType)(packetTypeAndChannel & 0b111);
-        ChannelType ppc = (ChannelType)(packetTypeAndChannel & 0b11111000);
+        ProtocolPacketType ppt = (ProtocolPacketType)(packetTypeAndChannel & 0b00001111);
+        ChannelType ppc = (ChannelType)(packetTypeAndChannel & 0b11110000);
         ulong seq = reader.ReadUInt64();
         ulong seqAck = reader.ReadUInt64();
         uint ackBits = reader.ReadUInt32();
