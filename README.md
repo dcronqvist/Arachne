@@ -25,23 +25,23 @@ The protocol uses 4 different channels and has 8 different packet types. Both th
 The 4 different channels are:
 
 ```
-Reliable ordered        = 0x0
-Reliable unordered      = 0x1
-Unreliable ordered      = 0x2
-Unreliable unordered    = 0x3
+Reliable ordered        = 0x00
+Reliable unordered      = 0x10
+Unreliable ordered      = 0x20
+Unreliable unordered    = 0x30
 ```
 
 The 8 different packet types are:
 
 ```
-Connection request              = 0x0
-Connection challenge            = 0x1
-Connection challenge response   = 0x2
-Connection response             = 0x3
-Connection keep alive           = 0x4
-Application data                = 0x5
-Connection termination          = 0x6
-Connection termination ack      = 0x7
+Connection request              = 0x00
+Connection challenge            = 0x01
+Connection challenge response   = 0x02
+Connection response             = 0x03
+Connection keep alive           = 0x04
+Application data                = 0x05
+Connection termination          = 0x06
+Connection termination ack      = 0x07
 ```
 
 So, a packet header with a first byte of `0x00` would be a `Connection request` packet on the `Reliable ordered` channel. A packet header with a first byte of `0x25` would be an `Application data` packet on the `Unreliable ordered` channel.
