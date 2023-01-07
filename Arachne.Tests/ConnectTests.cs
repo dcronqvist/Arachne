@@ -55,7 +55,7 @@ public class ConnectTests
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
-        var server = new Server(10, "127.0.0.1", 8888, 5, IAuthenticator.NoAuth, socketContextServer);
+        var server = new Server(10, "127.0.0.1", 8888, 5, IAuthenticator.NoAuth, socketContextServer, IServerInfoProvider.Default);
         var client = new Client(5, IAuthenticator.NoAuth, socketContextClient);
 
         await server.StartAsync();
@@ -71,7 +71,7 @@ public class ConnectTests
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
-        var server = new Server(10, "127.0.0.1", 8889, 5, new NeverAuth(), socketContextServer);
+        var server = new Server(10, "127.0.0.1", 8889, 5, new NeverAuth(), socketContextServer, IServerInfoProvider.Default);
         var client = new Client(5, IAuthenticator.NoAuth, socketContextClient);
 
         await server.StartAsync();
@@ -87,7 +87,7 @@ public class ConnectTests
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
-        var server = new Server(10, "127.0.0.1", 8890, 5, new PasswordAuth("goodpassword"), socketContextServer);
+        var server = new Server(10, "127.0.0.1", 8890, 5, new PasswordAuth("goodpassword"), socketContextServer, IServerInfoProvider.Default);
         var client = new Client(5, IAuthenticator.NoAuth, socketContextClient);
 
         await server.StartAsync();
@@ -103,7 +103,7 @@ public class ConnectTests
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
-        var server = new Server(10, "127.0.0.1", 8891, 5, new PasswordAuth("goodpassword"), socketContextServer);
+        var server = new Server(10, "127.0.0.1", 8891, 5, new PasswordAuth("goodpassword"), socketContextServer, IServerInfoProvider.Default);
         var client = new Client(5, IAuthenticator.NoAuth, socketContextClient);
 
         await server.StartAsync();
@@ -119,7 +119,7 @@ public class ConnectTests
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
-        var server = new Server(10, "127.0.0.1", 8892, 5, IAuthenticator.NoAuth, socketContextServer);
+        var server = new Server(10, "127.0.0.1", 8892, 5, IAuthenticator.NoAuth, socketContextServer, IServerInfoProvider.Default);
         var client = new Client(0, IAuthenticator.NoAuth, socketContextClient);
 
         await server.StartAsync();
@@ -135,7 +135,7 @@ public class ConnectTests
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
-        var server = new Server(10, "127.0.0.1", 8893, 5, IAuthenticator.NoAuth, socketContextServer);
+        var server = new Server(10, "127.0.0.1", 8893, 5, IAuthenticator.NoAuth, socketContextServer, IServerInfoProvider.Default);
         var client = new Client(5, IAuthenticator.NoAuth, socketContextClient);
 
         bool clientDisc = false;
@@ -163,7 +163,7 @@ public class ConnectTests
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
-        var server = new Server(10, "127.0.0.1", 8894, 5, IAuthenticator.NoAuth, socketContextServer);
+        var server = new Server(10, "127.0.0.1", 8894, 5, IAuthenticator.NoAuth, socketContextServer, IServerInfoProvider.Default);
         var client = new Client(5, IAuthenticator.NoAuth, socketContextClient);
 
         bool serverNotified = false;
@@ -188,7 +188,7 @@ public class ConnectTests
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
-        var server = new Server(10, "127.0.0.1", 8895, 5, IAuthenticator.NoAuth, socketContextServer);
+        var server = new Server(10, "127.0.0.1", 8895, 5, IAuthenticator.NoAuth, socketContextServer, IServerInfoProvider.Default);
         var client = new Client(5, IAuthenticator.NoAuth, socketContextClient);
 
         //await server.StartAsync(); // Don't start the server
@@ -204,7 +204,7 @@ public class ConnectTests
         var socketContextClient = new FakeSocketContext(fakeNet);
         // Here server will have a different protocol version than the client, but it will support the client's version still.
 
-        var server = new Server(10, "127.0.0.1", 8897, 5, IAuthenticator.NoAuth, socketContextServer, 3, 4); // So server still supports protocol version 3 and 4
+        var server = new Server(10, "127.0.0.1", 8897, 5, IAuthenticator.NoAuth, socketContextServer, IServerInfoProvider.Default, 3, 4); // So server still supports protocol version 3 and 4
         var client = new Client(3, IAuthenticator.NoAuth, socketContextClient); // Client is using protocol version 3
 
         await server.StartAsync();
@@ -226,7 +226,7 @@ public class ConnectTests
         var socketContextClient = new FakeSocketContext(fakeNet);
         // Here server will have a different protocol version than the client.
 
-        var server = new Server(10, "127.0.0.1", 8898, 5, IAuthenticator.NoAuth, socketContextServer, 4); // So server still supports protocol version 4
+        var server = new Server(10, "127.0.0.1", 8898, 5, IAuthenticator.NoAuth, socketContextServer, IServerInfoProvider.Default, 4); // So server still supports protocol version 4
         var client = new Client(3, IAuthenticator.NoAuth, socketContextClient); // Client is using protocol version 3, so it should fail.
 
         await server.StartAsync();
@@ -236,5 +236,40 @@ public class ConnectTests
         await Task.Delay(1000);
 
         await server.StopAsync();
+    }
+
+    [Fact]
+    public async Task Test11()
+    {
+        var fakeNet = new FakeNetwork(0.0f, 100);
+        var socketContextServer = new FakeSocketContext(fakeNet);
+        var socketContextClient = new FakeSocketContext(fakeNet);
+
+        var server = new Server(10, "127.0.0.1", 8899, 5, IAuthenticator.NoAuth, socketContextServer, IServerInfoProvider.Default, 4);
+
+        await server.StartAsync();
+        var serverInfo = await Client.RequestServerInfoAsync<DefaultServerInfo>(socketContextClient, "127.0.0.1", 8899);
+
+        Assert.NotNull(serverInfo);
+        Assert.Equal(5u, serverInfo.ProtocolID);
+        Assert.Collection(serverInfo.SupportedProtocols, p => Assert.Equal(4u, p));
+        Assert.Equal(0u, serverInfo.ConnectedClients);
+    }
+
+    [Fact]
+    public async Task Test12()
+    {
+        var fakeNet = new FakeNetwork(0.0f, 100);
+        var socketContextServer = new FakeSocketContext(fakeNet);
+        var socketContextClient = new FakeSocketContext(fakeNet);
+
+        var server = new Server(10, "127.0.0.1", 8899, 5, IAuthenticator.NoAuth, socketContextServer, IServerInfoProvider.Default, 4);
+
+        //await server.StartAsync(); // No server running.
+
+        // Server info should return null if no server is running.
+        var serverInfo = await Client.RequestServerInfoAsync<DefaultServerInfo>(socketContextClient, "127.0.0.1", 8899);
+
+        Assert.Null(serverInfo);
     }
 }

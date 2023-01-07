@@ -45,6 +45,7 @@ public sealed class Server
 
     internal IAuthenticator? _authenticator;
     private ThreadSafe<Dictionary<IPEndPoint, RemoteConnection>> _connections;
+    private IServerInfoProvider _serverInfoProvider;
 
     // EVENTS
     public event EventHandler<ReceivedDataServerEventArgs>? ReceivedData;
@@ -54,15 +55,16 @@ public sealed class Server
     public event EventHandler<ConnectionEventArgs>? ConnectionTerminated;
     public event EventHandler<ConnectionEventArgs>? ClientDisconnected;
 
-    public Server(int maxConns, string address, int port, uint protocolID, IAuthenticator authenticator, params uint[] supportedClientProtocols) : this(maxConns, address, port, protocolID, authenticator, new UDPSocketContext(), supportedClientProtocols)
+    public Server(int maxConns, string address, int port, uint protocolID, IAuthenticator authenticator, IServerInfoProvider infoProvider, params uint[] supportedClientProtocols) : this(maxConns, address, port, protocolID, authenticator, new UDPSocketContext(), infoProvider, supportedClientProtocols)
     { }
 
-    public Server(int maxConns, string address, int port, uint protocolID, IAuthenticator authenticator, ISocketContext context, params uint[] supportedClientProtocols)
+    public Server(int maxConns, string address, int port, uint protocolID, IAuthenticator authenticator, ISocketContext context, IServerInfoProvider infoProvider, params uint[] supportedClientProtocols)
     {
         this._maxConnections = maxConns;
         this._listenEndPoint = new IPEndPoint(IPAddress.Parse(address), port);
         this._protocolID = protocolID;
         this._listener = context;
+        this._serverInfoProvider = infoProvider;
         this._cts = new CancellationTokenSource();
         this._sendQueue = new BufferBlock<(byte[], IPEndPoint)>();
         this._authenticator = authenticator;
@@ -261,6 +263,20 @@ public sealed class Server
 
     private async Task ProcessPacket(ProtocolPacket packet, IPEndPoint sender)
     {
+        if (packet.PacketType == ProtocolPacketType.ServerInfoRequest)
+        {
+            var response = this._serverInfoProvider.GetServerInfo(this);
+
+            using var ms = new MemoryStream();
+            using var writer = new BinaryWriter(ms);
+
+            response.Serialize(writer);
+            var responsePacket = new ServerInfoResponse(ms.ToArray());
+
+            this.SendPacketTo(responsePacket, sender);
+            return;
+        }
+
         var connection = this.GetConnectionForEndPoint(sender);
         connection._lastReceivedPacketTime = DateTime.Now;
 
@@ -407,5 +423,15 @@ public sealed class Server
     {
         var packet = new ApplicationData(data).SetChannelType(channel);
         this.SendPacketTo(packet, connection.RemoteEndPoint);
+    }
+
+    public uint GetProtocolID()
+    {
+        return this._protocolID;
+    }
+
+    public uint[] GetSupportedProtocolIDs()
+    {
+        return this._supportedClientProtocolIDs;
     }
 }

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Threading.Tasks.Dataflow;
 using Arachne.Packets;
 
@@ -421,5 +422,53 @@ public sealed class Client
         this._socket.Close();
 
         this._cts.Cancel();
+    }
+
+    private static async Task<T> SendAndReceivePacketAsync<T>(ISocketContext context, IPEndPoint endPoint, ProtocolPacket packet, int timeout = 2000) where T : ISerializable
+    {
+        try
+        {
+            var tokenSource = new CancellationTokenSource(timeout);
+            var token = tokenSource.Token;
+
+            using var ms = new MemoryStream();
+            using var bw = new BinaryWriter(ms);
+
+            packet.Serialize(bw);
+            var bytes = ms.ToArray();
+
+            context.Connect(endPoint);
+            context.SendTo(bytes, endPoint);
+            var result = await context.ReceiveAsClient(token);
+
+            using var ms2 = new MemoryStream(result.Data);
+            using var br = new BinaryReader(ms2);
+
+            var responsePacket = ProtocolPacket.Deserialize(br);
+            ServerInfoResponse response = (ServerInfoResponse)responsePacket;
+
+            var data = response.Info;
+
+            using var ms3 = new MemoryStream(data);
+            using var br2 = new BinaryReader(ms3);
+
+            return (T)T.Deserialize(br2);
+        }
+        catch (Exception ex)
+        {
+            return default!;
+        }
+    }
+
+    public static async Task<T> RequestServerInfoAsync<T>(string host, int port, int timeout = 2000) where T : ISerializable
+    {
+        return await RequestServerInfoAsync<T>(new UDPSocketContext(), host, port, timeout);
+    }
+
+    public static async Task<T> RequestServerInfoAsync<T>(ISocketContext context, string host, int port, int timeout = 2000) where T : ISerializable
+    {
+        var serverInfoRequest = new ServerInfoRequest();
+        var endPoint = new IPEndPoint(IPAddress.Parse(host), port);
+        return await SendAndReceivePacketAsync<T>(context, endPoint, serverInfoRequest, timeout);
     }
 }

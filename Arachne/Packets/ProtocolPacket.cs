@@ -9,7 +9,10 @@ internal enum ProtocolPacketType : byte
     ConnectionKeepAlive = 0b0100,
     ApplicationData = 0b0101,
     ConnectionTermination = 0b0110,
-    ConnectionTerminationAck = 0b0111
+    ConnectionTerminationAck = 0b0111,
+
+    ServerInfoRequest = 0b1000,
+    ServerInfoResponse = 0b1001,
 }
 
 public enum ChannelType : byte
@@ -124,6 +127,10 @@ internal abstract class ProtocolPacket
                 return new ConnectionTermination("");
             case ProtocolPacketType.ConnectionTerminationAck:
                 return new ConnectionTerminationAck();
+            case ProtocolPacketType.ServerInfoRequest:
+                return new ServerInfoRequest();
+            case ProtocolPacketType.ServerInfoResponse:
+                return new ServerInfoResponse(new byte[0]);
                 // default:
                 //     throw new Exception("Invalid packet type");
         }
