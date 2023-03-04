@@ -112,13 +112,13 @@ internal abstract class ProtocolPacket
         switch (ppt)
         {
             case ProtocolPacketType.ConnectionRequest:
-                return new ConnectionRequest(0, 0, 0);
+                return new ConnectionRequest(0, 0);
             case ProtocolPacketType.ConnectionChallenge:
                 return new ConnectionChallenge(new byte[0]);
             case ProtocolPacketType.ConnectionChallengeResponse:
                 return new ConnectionChallengeResponse(new byte[0]);
             case ProtocolPacketType.ConnectionResponse:
-                return new ConnectionResponse(Constant.SUCCESS);
+                return new ConnectionResponse(Constant.SUCCESS, 0);
             case ProtocolPacketType.ConnectionKeepAlive:
                 return new ConnectionKeepAlive();
             case ProtocolPacketType.ApplicationData:

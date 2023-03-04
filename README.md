@@ -78,7 +78,6 @@ If the given `protocol id` and `protocol version` is not supported by the server
 ...
 [protocol id]       (4 bytes)
 [protocol version]  (4 bytes)
-[client id]         (8 bytes)
 ```
 
 #### **Connection Challenge (CH)**
@@ -113,6 +112,7 @@ This packet is sent by the server to the client, and is used to respond to a Con
 [header]        (21 bytes) (always sent on the Reliable ordered channel)
 ...
 [response code] (1 byte)
+[client id]     (8 bytes)
 ```
 
 ### During connection packets

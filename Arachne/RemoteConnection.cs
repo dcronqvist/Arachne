@@ -123,13 +123,12 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
             {
                 // TODO: Check stuff
                 var cr = (ConnectionRequest)packet;
-                this.ClientID = cr.ClientID;
 
                 this._server.TriggerConnRequestedEvent(this);
 
                 if (cr.ProtocolID != this._server._protocolID && !this._server._supportedClientProtocolIDs.Contains(cr.ProtocolID))
                 {
-                    var response = new ConnectionResponse(Constant.FAILURE_UNSUPPORTED_PROTOCOL_VERSION).SetChannelType(ChannelType.ReliableOrdered);
+                    var response = new ConnectionResponse(Constant.FAILURE_UNSUPPORTED_PROTOCOL_VERSION, 0).SetChannelType(ChannelType.ReliableOrdered);
                     this._server.SendPacketTo(response, this.RemoteEndPoint);
 
                     this._server.TriggerConnFailedAuthEvent(this);
@@ -176,8 +175,11 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
                     this._server.TriggerConnEstablishedEvent(this);
                 }
 
+                // Must select a client ID for this connection
+                this.ClientID = this._server.GetNextClientID();
+
                 // Send connection request response, here we are authenticated and connected
-                var response = new ConnectionResponse(code).SetChannelType(ChannelType.ReliableOrdered);
+                var response = new ConnectionResponse(code, this.ClientID).SetChannelType(ChannelType.ReliableOrdered);
                 this._server.SendPacketTo(response, this.RemoteEndPoint);
 
                 this.MoveNext(ConnectionTransition.CRSSent);

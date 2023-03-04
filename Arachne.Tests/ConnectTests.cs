@@ -42,7 +42,7 @@ public class PasswordAuth : IAuthenticator
 
     public static Client.GetChallengeResponse Response(string password)
     {
-        return (id, ch) => Task.FromResult(System.Text.Encoding.UTF8.GetBytes(password));
+        return (ch) => Task.FromResult(System.Text.Encoding.UTF8.GetBytes(password));
     }
 }
 
@@ -59,7 +59,7 @@ public class ConnectTests
         var client = new Client(5, IAuthenticator.NoAuth, socketContextClient);
 
         await server.StartAsync();
-        var code = await client.ConnectAsync(25, "127.0.0.1", 8888, IAuthenticator.NoAuthResponse);
+        var (code, id) = await client.ConnectAsync("127.0.0.1", 8888, IAuthenticator.NoAuthResponse);
         Assert.Equal(Constant.SUCCESS, code);
         await server.StopAsync();
     }
@@ -75,7 +75,7 @@ public class ConnectTests
         var client = new Client(5, IAuthenticator.NoAuth, socketContextClient);
 
         await server.StartAsync();
-        var code = await client.ConnectAsync(25, "127.0.0.1", 8889, IAuthenticator.NoAuthResponse);
+        var (code, id) = await client.ConnectAsync("127.0.0.1", 8889, IAuthenticator.NoAuthResponse);
         Assert.Equal(Constant.FAILURE_INVALID_AUTHENTICATION, code);
         await server.StopAsync();
     }
@@ -91,7 +91,7 @@ public class ConnectTests
         var client = new Client(5, IAuthenticator.NoAuth, socketContextClient);
 
         await server.StartAsync();
-        var code = await client.ConnectAsync(25, "127.0.0.1", 8890, (id, ch) => Task.FromResult(System.Text.Encoding.UTF8.GetBytes("goodpassword")));
+        var (code, id) = await client.ConnectAsync("127.0.0.1", 8890, (ch) => Task.FromResult(System.Text.Encoding.UTF8.GetBytes("goodpassword")));
         Assert.Equal(Constant.SUCCESS, code);
         await server.StopAsync();
     }
@@ -107,7 +107,7 @@ public class ConnectTests
         var client = new Client(5, IAuthenticator.NoAuth, socketContextClient);
 
         await server.StartAsync();
-        var code = await client.ConnectAsync(25, "127.0.0.1", 8891, (id, ch) => Task.FromResult(System.Text.Encoding.UTF8.GetBytes("thewrongpassword")));
+        var (code, id) = await client.ConnectAsync("127.0.0.1", 8891, (ch) => Task.FromResult(System.Text.Encoding.UTF8.GetBytes("thewrongpassword")));
         Assert.Equal(Constant.FAILURE_INVALID_AUTHENTICATION, code);
         await server.StopAsync();
     }
@@ -123,7 +123,7 @@ public class ConnectTests
         var client = new Client(0, IAuthenticator.NoAuth, socketContextClient);
 
         await server.StartAsync();
-        var code = await client.ConnectAsync(25, "127.0.0.1", 8892, IAuthenticator.NoAuthResponse, timeout: 2000);
+        var (code, id) = await client.ConnectAsync("127.0.0.1", 8892, IAuthenticator.NoAuthResponse, timeout: 2000);
         Assert.Equal(Constant.FAILURE_UNSUPPORTED_PROTOCOL_VERSION, code);
         await server.StopAsync();
     }
@@ -143,10 +143,10 @@ public class ConnectTests
         client.DisconnectedByServer += (s, e) => clientDisc = true;
 
         await server.StartAsync();
-        var code = await client.ConnectAsync(25, "127.0.0.1", 8893, IAuthenticator.NoAuthResponse, timeout: 2000);
+        var (code, id) = await client.ConnectAsync("127.0.0.1", 8893, IAuthenticator.NoAuthResponse, timeout: 2000);
         Assert.Equal(Constant.SUCCESS, code);
 
-        var connection = server.GetClientConnection(25);
+        var connection = server.GetClientConnection(id);
         Assert.NotNull(connection);
 
         server.DisconnectClient(connection);
@@ -171,7 +171,7 @@ public class ConnectTests
         server.ClientDisconnected += (s, e) => serverNotified = true;
 
         await server.StartAsync();
-        var code = await client.ConnectAsync(25, "127.0.0.1", 8894, IAuthenticator.NoAuthResponse, timeout: 2000);
+        var (code, id) = await client.ConnectAsync("127.0.0.1", 8894, IAuthenticator.NoAuthResponse, timeout: 2000);
         Assert.Equal(Constant.SUCCESS, code);
 
         client.Disconnect();
@@ -192,7 +192,7 @@ public class ConnectTests
         var client = new Client(5, IAuthenticator.NoAuth, socketContextClient);
 
         //await server.StartAsync(); // Don't start the server
-        var code = await client.ConnectAsync(25, "127.0.0.1", 8895, IAuthenticator.NoAuthResponse, timeout: 2000);
+        var (code, id) = await client.ConnectAsync("127.0.0.1", 8895, IAuthenticator.NoAuthResponse, timeout: 2000);
         Assert.Equal(Constant.NO_RESPONSE, code);
     }
 
@@ -208,7 +208,7 @@ public class ConnectTests
         var client = new Client(3, IAuthenticator.NoAuth, socketContextClient); // Client is using protocol version 3
 
         await server.StartAsync();
-        var code = await client.ConnectAsync(1, "127.0.0.1", 8897, IAuthenticator.NoAuthResponse, timeout: 2000);
+        var (code, id) = await client.ConnectAsync("127.0.0.1", 8897, IAuthenticator.NoAuthResponse, timeout: 2000);
         Assert.Equal(Constant.SUCCESS, code);
 
         await Task.Delay(1000);
@@ -230,7 +230,7 @@ public class ConnectTests
         var client = new Client(3, IAuthenticator.NoAuth, socketContextClient); // Client is using protocol version 3, so it should fail.
 
         await server.StartAsync();
-        var code = await client.ConnectAsync(1, "127.0.0.1", 8898, IAuthenticator.NoAuthResponse, timeout: 2000);
+        var (code, id) = await client.ConnectAsync("127.0.0.1", 8898, IAuthenticator.NoAuthResponse, timeout: 2000);
         Assert.Equal(Constant.FAILURE_UNSUPPORTED_PROTOCOL_VERSION, code);
 
         await Task.Delay(1000);

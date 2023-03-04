@@ -3,7 +3,7 @@ namespace Arachne;
 public interface IAuthenticator
 {
     static IAuthenticator NoAuth = new NoAuth();
-    static Client.GetChallengeResponse NoAuthResponse = (id, challenge) => Task.FromResult(challenge);
+    static Client.GetChallengeResponse NoAuthResponse = (challenge) => Task.FromResult(challenge);
 
     Task<byte[]> GetChallengeForClientAsync(ulong clientID);
     Task<bool> AuthenticateAsync(ulong clientID, byte[] challenge, byte[] response);

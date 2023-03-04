@@ -19,7 +19,7 @@ public class ReceivedDataClientEventArgs : EventArgs
 
 public sealed class Client
 {
-    public delegate Task<byte[]> GetChallengeResponse(ulong clientID, byte[] challenge);
+    public delegate Task<byte[]> GetChallengeResponse(byte[] challenge);
 
     private ISocketContext _socket;
     private IPEndPoint? _connectedTo;
@@ -93,7 +93,7 @@ public sealed class Client
         }
     }
 
-    public async Task<Constant> ConnectAsync(ulong clientID, string address, int port, GetChallengeResponse respondToChallenge, int timeout = 5000)
+    public async Task<(Constant, ulong)> ConnectAsync(string address, int port, GetChallengeResponse respondToChallenge, int timeout = 5000)
     {
         this._lastPacketSent = DateTime.Now;
         var tokenSource = new CancellationTokenSource();
@@ -103,14 +103,14 @@ public sealed class Client
         this._socket.Connect(new IPEndPoint(IPAddress.Parse(address), port));
 
         // Send connect request
-        var connectRequest = new ConnectionRequest(this._protocolID, 0, clientID).SetChannelType(ChannelType.ReliableOrdered);
+        var connectRequest = new ConnectionRequest(this._protocolID, 0).SetChannelType(ChannelType.ReliableOrdered);
         this.SendPacket(connectRequest);
 
         var response = await this.ReceivePacketAsync<ProtocolPacket>(token);
 
         if (response is null)
         {
-            return Constant.NO_RESPONSE;
+            return (Constant.NO_RESPONSE, 0);
         }
 
         ConnectionResponse? connectResponse = null;
@@ -118,7 +118,7 @@ public sealed class Client
         if (response.PacketType == ProtocolPacketType.ConnectionChallenge)
         {
             var challenge = (ConnectionChallenge)response;
-            var challResp = await respondToChallenge(clientID, challenge.Challenge);
+            var challResp = await respondToChallenge(challenge.Challenge);
             var challRespPacket = new ConnectionChallengeResponse(challResp).SetChannelType(ChannelType.ReliableOrdered);
             this.SendPacket(challRespPacket);
             connectResponse = await this.ReceivePacketAsync<ConnectionResponse>(token);
@@ -131,12 +131,12 @@ public sealed class Client
 
         if (connectResponse is null)
         {
-            return Constant.NO_RESPONSE;
+            return (Constant.NO_RESPONSE, 0);
         }
 
         if (!connectResponse.IsSuccess())
         {
-            return connectResponse.Code;
+            return (connectResponse.Code, connectResponse.ClientID);
         }
 
         this._connectedTo = new IPEndPoint(IPAddress.Parse(address), port);
@@ -155,7 +155,7 @@ public sealed class Client
             await Task.Delay(100);
         }
 
-        return Constant.SUCCESS;
+        return (Constant.SUCCESS, connectResponse.ClientID);
     }
 
     private async Task KeepAliveLoopAsync(CancellationToken token)
