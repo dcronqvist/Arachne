@@ -213,7 +213,7 @@ public class ConnectTests
 
         await Task.Delay(1000);
 
-        Assert.NotNull(server.GetClientConnection(1));
+        Assert.NotNull(server.GetClientConnection(0));
 
         await server.StopAsync();
     }

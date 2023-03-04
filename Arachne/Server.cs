@@ -72,9 +72,10 @@ public sealed class Server
         this._supportedClientProtocolIDs = supportedClientProtocols;
     }
 
+    private ulong _nextID = 0;
     internal ulong GetNextClientID()
     {
-        return (ulong)this._connections.LockedAction(c => c!.Count);
+        return this._nextID++;
     }
 
     internal void TriggerConnRequestedEvent(RemoteConnection rc)
