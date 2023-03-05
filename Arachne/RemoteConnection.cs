@@ -172,11 +172,10 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
                 }
                 else
                 {
+                    // Must select a client ID for this connection
+                    this.ClientID = this._server.GetNextClientID();
                     this._server.TriggerConnEstablishedEvent(this);
                 }
-
-                // Must select a client ID for this connection
-                this.ClientID = this._server.GetNextClientID();
 
                 // Send connection request response, here we are authenticated and connected
                 var response = new ConnectionResponse(code, this.ClientID).SetChannelType(ChannelType.ReliableOrdered);
