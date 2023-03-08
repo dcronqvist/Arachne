@@ -163,11 +163,11 @@ public sealed class Client
         while (!token.IsCancellationRequested)
         {
             var now = DateTime.Now;
-            if (now - this._lastPacketSent > TimeSpan.FromSeconds(5))
+            if (now - this._lastPacketSent > TimeSpan.FromMilliseconds(500))
             {
                 this.SendPacket(new ConnectionKeepAlive().SetChannelType(ChannelType.UnreliableUnordered));
             }
-            await Task.Delay(1000);
+            await Task.Delay(50);
         }
     }
 

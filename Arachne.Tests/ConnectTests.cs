@@ -1,5 +1,7 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Tasks;
@@ -271,5 +273,20 @@ public class ConnectTests
         var serverInfo = await Client.RequestServerInfoAsync<DefaultServerInfo>(socketContextClient, "127.0.0.1", 8899);
 
         Assert.Null(serverInfo);
+    }
+}
+
+class TestPacket : ISerializable
+{
+    public int Value { get; set; }
+
+    public static object Deserialize(BinaryReader reader)
+    {
+        return new TestPacket { Value = reader.ReadInt32() };
+    }
+
+    public void Serialize(BinaryWriter writer)
+    {
+        writer.Write(Value);
     }
 }
