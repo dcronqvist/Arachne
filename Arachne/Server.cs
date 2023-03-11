@@ -170,7 +170,7 @@ public sealed class Server
         {
             while (!token.IsCancellationRequested)
             {
-                var timeBeforeResend = TimeSpan.FromSeconds(1);
+                var timeBeforeResend = TimeSpan.FromMilliseconds(1000);
                 var connections = this._connections.LockedAction(c => c is null ? new List<RemoteConnection>() : c.Values.ToList())!;
 
                 foreach (var connection in connections)
