@@ -62,7 +62,7 @@ public class ConnectTests
     [Fact]
     public async Task Test1()
     {
-        var fakeNet = new FakeNetwork(0.0f, 100);
+        var fakeNet = new FakeNetwork(0, 0.0f, 100);
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
@@ -79,7 +79,7 @@ public class ConnectTests
     [Fact]
     public async Task Test2()
     {
-        var fakeNet = new FakeNetwork(0.0f, 100);
+        var fakeNet = new FakeNetwork(0, 0.0f, 100);
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
@@ -97,7 +97,7 @@ public class ConnectTests
     [Fact]
     public async Task Test3()
     {
-        var fakeNet = new FakeNetwork(0.0f, 100);
+        var fakeNet = new FakeNetwork(0, 0.0f, 100);
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
@@ -115,7 +115,7 @@ public class ConnectTests
     [Fact]
     public async Task Test4()
     {
-        var fakeNet = new FakeNetwork(0.0f, 100);
+        var fakeNet = new FakeNetwork(0, 0.0f, 100);
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
@@ -133,7 +133,7 @@ public class ConnectTests
     [Fact]
     public async Task Test5()
     {
-        var fakeNet = new FakeNetwork(0.0f, 100);
+        var fakeNet = new FakeNetwork(0, 0.0f, 100);
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
@@ -151,7 +151,7 @@ public class ConnectTests
     [Fact]
     public async Task Test6()
     {
-        var fakeNet = new FakeNetwork(0.0f, 100);
+        var fakeNet = new FakeNetwork(0, 0.0f, 100);
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
@@ -181,7 +181,7 @@ public class ConnectTests
     [Fact]
     public async Task Test7()
     {
-        var fakeNet = new FakeNetwork(0.0f, 100);
+        var fakeNet = new FakeNetwork(0, 0.0f, 100);
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
@@ -208,7 +208,7 @@ public class ConnectTests
     [Fact]
     public async Task Test8()
     {
-        var fakeNet = new FakeNetwork(0.0f, 100);
+        var fakeNet = new FakeNetwork(0, 0.0f, 100);
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
@@ -225,7 +225,7 @@ public class ConnectTests
     [Fact]
     public async Task Test9()
     {
-        var fakeNet = new FakeNetwork(0.0f, 100);
+        var fakeNet = new FakeNetwork(0, 0.0f, 100);
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
         // Here server will have a different protocol version than the client, but it will support the client's version still.
@@ -249,7 +249,7 @@ public class ConnectTests
     [Fact]
     public async Task Test10()
     {
-        var fakeNet = new FakeNetwork(0.0f, 100);
+        var fakeNet = new FakeNetwork(0, 0.0f, 100);
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
         // Here server will have a different protocol version than the client.
@@ -271,7 +271,7 @@ public class ConnectTests
     [Fact]
     public async Task Test11()
     {
-        var fakeNet = new FakeNetwork(0.0f, 100);
+        var fakeNet = new FakeNetwork(0, 0.0f, 100);
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
@@ -289,7 +289,7 @@ public class ConnectTests
     [Fact]
     public async Task Test12()
     {
-        var fakeNet = new FakeNetwork(0.0f, 100);
+        var fakeNet = new FakeNetwork(0, 0.0f, 100);
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
@@ -306,10 +306,11 @@ public class ConnectTests
     [Theory]
     [InlineData(2, 0.0f, 100)]
     [InlineData(5, 0.0f, 100)]
-    [InlineData(20, 0.2f, 20)]
+    [InlineData(20, 0.5f, 20)]
+    [InlineData(50, 0.4f, 20)]
     public async Task Test13(int amount, float packetLoss, int latency)
     {
-        var fakeNet = new FakeNetwork(0, latency); // 0% packet loss
+        var fakeNet = new FakeNetwork(0, 0, latency); // 0% packet loss
         var socketContextServer = new FakeSocketContext(fakeNet);
         var socketContextClient = new FakeSocketContext(fakeNet);
 
@@ -324,7 +325,17 @@ public class ConnectTests
             var data = e.Data;
             received.LockedAction(r => r.Add(BitConverter.ToInt32(data)));
             server.SendToClient(new byte[1] { 11 }, e.From, Packets.ChannelType.Default); // This will make sure that the client will receive acks.
-            output.WriteLine($"Server received data: {BitConverter.ToInt32(data)}");
+            output.WriteLine($"Server received data {BitConverter.ToInt32(data)}");
+        };
+
+        client.ServerAckedPacket += (sender, e) =>
+        {
+            output.WriteLine($"Server acked packet {e}");
+        };
+
+        client.ResentPacket += (sender, e) =>
+        {
+            output.WriteLine($"Client resent packet {e}");
         };
 
         await server.StartAsync();
@@ -336,8 +347,9 @@ public class ConnectTests
 
         foreach (var val in valuesToSend)
         {
-            client.SendToServer(BitConverter.GetBytes(val), Packets.ChannelType.Reliable);
-            //await Task.Delay(10);
+            var seq = client.SendToServer(BitConverter.GetBytes(val), Packets.ChannelType.Reliable);
+            output.WriteLine($"Client sent data {val} with seq {seq}");
+            await Task.Delay(latency);
         }
 
         await Task.Delay(10000);

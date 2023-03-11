@@ -16,11 +16,11 @@ internal class FakeNetwork
 
     Random rng;
 
-    public FakeNetwork(float packetLoss, int latency)
+    public FakeNetwork(int seed, float packetLoss, int latency)
     {
         _lossRate = packetLoss;
         _delay = latency;
-        rng = new();
+        rng = new(seed);
     }
 
     internal void Send(byte[] data, IPEndPoint from, IPEndPoint to)

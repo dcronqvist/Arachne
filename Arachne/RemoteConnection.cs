@@ -67,9 +67,18 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
         this._lastReceivedSequenceNumber = sequenceNumber;
     }
 
-    internal bool FollowsOrder(ulong sequenceNumber)
+    internal bool FollowsOrder(ProtocolPacket packet)
     {
-        return sequenceNumber > this._lastReceivedSequenceNumber;
+        if (packet.Channel.IsOrdered() && packet.Channel.IsReliable())
+        {
+            return packet.SequenceNumber == this._lastReceivedSequenceNumber + 1;
+        }
+        else if (packet.Channel.IsOrdered())
+        {
+            return packet.SequenceNumber > this._lastReceivedSequenceNumber;
+        }
+
+        return true;
     }
 
     internal bool HasTimedOut(TimeSpan timeout)

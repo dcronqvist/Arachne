@@ -285,26 +285,24 @@ public sealed class Server
         connection._lastReceivedPacketTime = DateTime.Now;
         connection._reliabilityManager.LockedAction(rm => rm.AddReceivedPacket(packet));
 
-        if (packet.Channel.HasFlag(ChannelType.Ordered))
+        if (connection.FollowsOrder(packet))
         {
-            if (connection.FollowsOrder(packet.SequenceNumber))
-            {
-                connection.SetLastReceivedSequenceNumber(packet.SequenceNumber);
-            }
-            else
-            {
-                await connection.ReceiveProtocolPacket(packet);
-                return; // Packet is out of order, ignore it
-            }
+            connection.SetLastReceivedSequenceNumber(packet.SequenceNumber);
         }
+        else
+        {
+            // Out of order, so don't give it to the connection
+            await connection.ReceiveProtocolPacket(packet);
+            return;
+        }
+
+        await connection.ReceiveProtocolPacket(packet);
 
         if (packet.PacketType == ProtocolPacketType.ApplicationData)
         {
             var appData = (ApplicationData)packet;
             this.ReceivedData?.Invoke(this, new ReceivedDataServerEventArgs(appData.Data, connection));
         }
-
-        await connection.ReceiveProtocolPacket(packet);
     }
 
     private RemoteConnection GetConnectionForEndPoint(IPEndPoint endPoint)

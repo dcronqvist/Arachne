@@ -44,6 +44,8 @@ public sealed class Client
 
     public event EventHandler<ReceivedDataClientEventArgs>? ReceivedData;
     public event EventHandler? DisconnectedByServer;
+    public event EventHandler<ulong>? ServerAckedPacket;
+    public event EventHandler<ulong>? ResentPacket;
 
     public Client(uint protocolID, IAuthenticator authenticator) : this(protocolID, authenticator, new UDPSocketContext())
     { }
@@ -55,6 +57,14 @@ public sealed class Client
         this._cts = new CancellationTokenSource();
         this._sendQueue = new BufferBlock<byte[]>();
         this._authenticator = auth;
+
+        this._reliabilityManager.LockedAction(rm =>
+        {
+            rm.SequenceNumberAcked += (s, e) =>
+            {
+                this.ServerAckedPacket?.Invoke(this, e);
+            };
+        });
     }
 
     private ulong GetNextSequenceNumber()
@@ -117,7 +127,7 @@ public sealed class Client
 
         this._receiveTask = Task.Run(() => this.ReceiveLoopAsync(loopToken));
         this._sendTask = Task.Run(() => this.SendLoopAsync(loopToken));
-        //_ = Task.Run(() => this.KeepAliveLoopAsync(loopToken));
+        _ = Task.Run(() => this.KeepAliveLoopAsync(loopToken));
 
         while (!this._readyToSend || !this._readyToReceive)
         {
@@ -131,7 +141,7 @@ public sealed class Client
     {
         while (!token.IsCancellationRequested)
         {
-            var resendTime = TimeSpan.FromSeconds(1);
+            var resendTime = TimeSpan.FromMilliseconds(1000);
             this._reliabilityManager.LockedAction(rm =>
             {
                 var packsToResend = rm.GetSentPacketsOlderThan(resendTime);
@@ -140,8 +150,12 @@ public sealed class Client
                 {
                     this.SendPacketRaw(p);
                     rm.UpdateSentTimeForPacket(p);
+                    this.ResentPacket?.Invoke(this, p.SequenceNumber);
                 }
+
             });
+
+            await Task.Delay(50);
         }
     }
 
@@ -246,7 +260,11 @@ public sealed class Client
 
     private bool FollowsOrder(ProtocolPacket packet)
     {
-        if (packet.Channel.HasFlag(ChannelType.Ordered))
+        if (packet.Channel.IsOrdered() && packet.Channel.IsReliable())
+        {
+            return packet.SequenceNumber == this._lastReceivedSequenceNumber + 1;
+        }
+        else if (packet.Channel.IsOrdered())
         {
             return packet.SequenceNumber > this._lastReceivedSequenceNumber;
         }
@@ -266,6 +284,11 @@ public sealed class Client
             return;
         }
 
+        this._reliabilityManager.LockedAction(rm =>
+        {
+            rm.AddReceivedPacket(packet);
+        });
+
         if (!this.FollowsOrder(packet))
         {
             // Packet is out of order. Ignore it.
@@ -273,10 +296,6 @@ public sealed class Client
         }
 
         this._lastReceivedSequenceNumber = packet.SequenceNumber;
-        this._reliabilityManager.LockedAction(rm =>
-        {
-            rm.AddReceivedPacket(packet);
-        });
 
         if (packet.PacketType == ProtocolPacketType.ApplicationData)
         {
@@ -285,7 +304,7 @@ public sealed class Client
         }
     }
 
-    internal void SendPacket(ProtocolPacket packet)
+    internal ulong SendPacket(ProtocolPacket packet)
     {
         this._lastPacketSent = DateTime.Now;
 
@@ -308,6 +327,7 @@ public sealed class Client
         }
 
         this.Send(bytes);
+        return packet.SequenceNumber;
     }
 
     internal void SendPacketRaw(ProtocolPacket packet)
@@ -334,10 +354,10 @@ public sealed class Client
 
     // PUBLIC API
 
-    public void SendToServer(byte[] data, ChannelType channel)
+    public ulong SendToServer(byte[] data, ChannelType channel)
     {
         var packet = new ApplicationData(data).SetChannelType(channel);
-        this.SendPacket(packet);
+        return this.SendPacket(packet);
     }
 
     public void Disconnect()

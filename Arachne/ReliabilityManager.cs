@@ -7,13 +7,18 @@ internal class ReliabilityManager
     private List<(DateTime, ProtocolPacket)> _sentPacketsAwaitingAck = new();
     private PriorityQueue<ProtocolPacket, ulong> _receivedPacketsAwaitingAck = new();
 
+    public event EventHandler<ulong>? SequenceNumberAcked;
+
     public ReliabilityManager() { }
 
     // SENDING PACKETS AND RECEIVING ACKS FOR THEM
 
     public void AddSentPacket(ProtocolPacket packet)
     {
-        this._sentPacketsAwaitingAck.Add((DateTime.Now, packet));
+        if (!this._sentPacketsAwaitingAck.Where(x => x.Item2.SequenceNumber == packet.SequenceNumber).Any())
+        {
+            this._sentPacketsAwaitingAck.Add((DateTime.Now, packet));
+        }
     }
 
     public void AddReceivedPacket(ProtocolPacket packet)
@@ -22,7 +27,12 @@ internal class ReliabilityManager
 
         foreach (var receivedAck in receivedAcks)
         {
-            this._sentPacketsAwaitingAck.RemoveAll(x => x.Item2.SequenceNumber == receivedAck);
+            int amount = this._sentPacketsAwaitingAck.RemoveAll(x => x.Item2.SequenceNumber == receivedAck);
+
+            if (amount > 0)
+            {
+                this.SequenceNumberAcked?.Invoke(this, receivedAck);
+            }
         }
 
         if (packet.Channel.IsReliable())
