@@ -27,10 +27,9 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
     private Server _server;
     private ConnectionChallenge? _sentChallenge;
     private ulong _nextSequenceNumber = 1;
-    private ulong _lastReceivedSequenceNumber = 0;
+    internal ulong _lastReceivedSequenceNumber = 0;
     internal DateTime _lastReceivedPacketTime;
-
-    private Dictionary<ulong, (DateTime, ProtocolPacket)> _unackedReliableSequenceNumbers = new();
+    internal ThreadSafe<ReliabilityManager> _reliabilityManager = new(new());
 
     public IPEndPoint RemoteEndPoint { get; private set; }
     public bool IsConnected => base.CurrentState == ConnectionState.AuthenticatedConnected;
@@ -73,46 +72,20 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
         return sequenceNumber > this._lastReceivedSequenceNumber;
     }
 
-    internal void RegisterReliablePacketSend(ProtocolPacket packet)
-    {
-        this._unackedReliableSequenceNumbers.Add(packet.SequenceNumber, (DateTime.Now, packet));
-    }
-
-    internal void RegisterResentReliablePacket(ulong sequenceNumber)
-    {
-        this._unackedReliableSequenceNumbers[sequenceNumber] = (DateTime.Now, this._unackedReliableSequenceNumbers[sequenceNumber].Item2);
-    }
-
-    internal void RegisterReliableSequenceNumberAcked(params ulong[] sequenceNumbers)
-    {
-        foreach (var sequenceNumber in sequenceNumbers)
-        {
-            if (this._unackedReliableSequenceNumbers.ContainsKey(sequenceNumber))
-            {
-                this._unackedReliableSequenceNumbers.Remove(sequenceNumber);
-            }
-        }
-    }
-
-    internal List<(ProtocolPacket, IPEndPoint)> GetUnackedPacketsOlderThan(TimeSpan timeout)
-    {
-        var now = DateTime.Now;
-        var packets = new List<(ProtocolPacket, IPEndPoint)>();
-        var dict = this._unackedReliableSequenceNumbers.ToDictionary(x => x.Key, x => x.Value);
-        foreach (var kvp in dict)
-        {
-            if (now - kvp.Value.Item1 > timeout)
-            {
-                packets.Add((kvp.Value.Item2, this.RemoteEndPoint));
-            }
-        }
-
-        return packets;
-    }
-
     internal bool HasTimedOut(TimeSpan timeout)
     {
         return DateTime.Now - this._lastReceivedPacketTime > timeout;
+    }
+
+    internal void AddSentPacket(ProtocolPacket packet)
+    {
+        if (packet.Channel.IsReliable())
+        {
+            this._reliabilityManager.LockedAction(rm =>
+            {
+                rm.AddSentPacket(packet);
+            });
+        }
     }
 
     internal async Task ReceiveProtocolPacket(ProtocolPacket packet)
@@ -128,7 +101,7 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
 
                 if (cr.ProtocolID != this._server._protocolID && !this._server._supportedClientProtocolIDs.Contains(cr.ProtocolID))
                 {
-                    var response = new ConnectionResponse(Constant.FAILURE_UNSUPPORTED_PROTOCOL_VERSION, 0).SetChannelType(ChannelType.ReliableOrdered);
+                    var response = new ConnectionResponse(Constant.FAILURE_UNSUPPORTED_PROTOCOL_VERSION, 0).SetChannelType(ChannelType.Reliable | ChannelType.Ordered);
                     this._server.SendPacketTo(response, this.RemoteEndPoint);
 
                     this._server.TriggerConnFailedAuthEvent(this);
@@ -139,7 +112,7 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
 
                 // Send challenge
                 var challenge = await this._server._authenticator!.GetChallengeForClientAsync(this.ClientID);
-                var challengePacket = (ConnectionChallenge)new ConnectionChallenge(challenge).SetChannelType(ChannelType.ReliableOrdered);
+                var challengePacket = (ConnectionChallenge)new ConnectionChallenge(challenge).SetChannelType(ChannelType.Reliable | ChannelType.Ordered);
 
                 this._sentChallenge = challengePacket;
 
@@ -178,7 +151,7 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
                 }
 
                 // Send connection request response, here we are authenticated and connected
-                var response = new ConnectionResponse(code, this.ClientID).SetChannelType(ChannelType.ReliableOrdered);
+                var response = new ConnectionResponse(code, this.ClientID).SetChannelType(ChannelType.Reliable | ChannelType.Ordered);
                 this._server.SendPacketTo(response, this.RemoteEndPoint);
 
                 this.MoveNext(ConnectionTransition.CRSSent);
@@ -197,7 +170,7 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
             if (this.TryMoveNext(ConnectionTransition.CTReceived, out var newState))
             {
                 // Send connection termination response (assume disconnected already)
-                var response = new ConnectionTerminationAck().SetChannelType(ChannelType.ReliableOrdered);
+                var response = new ConnectionTerminationAck().SetChannelType(ChannelType.Reliable | ChannelType.Ordered);
                 this._server.SendPacketTo(response, this.RemoteEndPoint);
 
                 this._server.TriggerClientDisconnectEvent(this);
@@ -222,7 +195,7 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
     {
         if (this.TryMoveNext(ConnectionTransition.CTSent, out var newState))
         {
-            var disconnect = new ConnectionTermination(reason).SetChannelType(ChannelType.ReliableOrdered);
+            var disconnect = new ConnectionTermination(reason).SetChannelType(ChannelType.Reliable | ChannelType.Ordered);
             this._server.SendPacketTo(disconnect, this.RemoteEndPoint);
         }
         else

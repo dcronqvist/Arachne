@@ -11,7 +11,7 @@ internal class FakeNetwork
     // data, from, to
     internal ThreadSafe<Queue<(byte[], IPEndPoint, IPEndPoint)>> inNetwork = new(new());
 
-    private float _lossRate;
+    internal float _lossRate;
     private int _delay;
 
     Random rng;
@@ -25,8 +25,10 @@ internal class FakeNetwork
 
     internal void Send(byte[] data, IPEndPoint from, IPEndPoint to)
     {
-        if (rng.NextDouble() < _lossRate)
+        if (rng.NextDouble() < (_lossRate + 0.0001f))
         {
+            // Loss rate is halved every time a packet is lost to prevent tests from being impossible...
+            _lossRate /= 2;
             return; // Packet loss
         }
 

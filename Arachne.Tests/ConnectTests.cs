@@ -2,10 +2,12 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Arachne.Tests;
 
@@ -50,6 +52,13 @@ public class PasswordAuth : IAuthenticator
 
 public class ConnectTests
 {
+    private readonly ITestOutputHelper output;
+
+    public ConnectTests(ITestOutputHelper output)
+    {
+        this.output = output;
+    }
+
     [Fact]
     public async Task Test1()
     {
@@ -62,6 +71,7 @@ public class ConnectTests
 
         await server.StartAsync();
         var (code, id) = await client.ConnectAsync("127.0.0.1", 8888, IAuthenticator.NoAuthResponse);
+        await Task.Delay(500);
         Assert.Equal(Constant.SUCCESS, code);
         await server.StopAsync();
     }
@@ -78,6 +88,8 @@ public class ConnectTests
 
         await server.StartAsync();
         var (code, id) = await client.ConnectAsync("127.0.0.1", 8889, IAuthenticator.NoAuthResponse);
+        await Task.Delay(500);
+
         Assert.Equal(Constant.FAILURE_INVALID_AUTHENTICATION, code);
         await server.StopAsync();
     }
@@ -94,6 +106,8 @@ public class ConnectTests
 
         await server.StartAsync();
         var (code, id) = await client.ConnectAsync("127.0.0.1", 8890, (ch) => Task.FromResult(System.Text.Encoding.UTF8.GetBytes("goodpassword")));
+        await Task.Delay(500);
+
         Assert.Equal(Constant.SUCCESS, code);
         await server.StopAsync();
     }
@@ -110,6 +124,8 @@ public class ConnectTests
 
         await server.StartAsync();
         var (code, id) = await client.ConnectAsync("127.0.0.1", 8891, (ch) => Task.FromResult(System.Text.Encoding.UTF8.GetBytes("thewrongpassword")));
+        await Task.Delay(500);
+
         Assert.Equal(Constant.FAILURE_INVALID_AUTHENTICATION, code);
         await server.StopAsync();
     }
@@ -126,6 +142,8 @@ public class ConnectTests
 
         await server.StartAsync();
         var (code, id) = await client.ConnectAsync("127.0.0.1", 8892, IAuthenticator.NoAuthResponse, timeout: 2000);
+        await Task.Delay(500);
+
         Assert.Equal(Constant.FAILURE_UNSUPPORTED_PROTOCOL_VERSION, code);
         await server.StopAsync();
     }
@@ -146,6 +164,8 @@ public class ConnectTests
 
         await server.StartAsync();
         var (code, id) = await client.ConnectAsync("127.0.0.1", 8893, IAuthenticator.NoAuthResponse, timeout: 2000);
+        await Task.Delay(500);
+
         Assert.Equal(Constant.SUCCESS, code);
 
         var connection = server.GetClientConnection(id);
@@ -174,6 +194,8 @@ public class ConnectTests
 
         await server.StartAsync();
         var (code, id) = await client.ConnectAsync("127.0.0.1", 8894, IAuthenticator.NoAuthResponse, timeout: 2000);
+        await Task.Delay(500);
+
         Assert.Equal(Constant.SUCCESS, code);
 
         client.Disconnect();
@@ -195,6 +217,8 @@ public class ConnectTests
 
         //await server.StartAsync(); // Don't start the server
         var (code, id) = await client.ConnectAsync("127.0.0.1", 8895, IAuthenticator.NoAuthResponse, timeout: 2000);
+        await Task.Delay(500);
+
         Assert.Equal(Constant.NO_RESPONSE, code);
     }
 
@@ -211,11 +235,13 @@ public class ConnectTests
 
         await server.StartAsync();
         var (code, id) = await client.ConnectAsync("127.0.0.1", 8897, IAuthenticator.NoAuthResponse, timeout: 2000);
+        await Task.Delay(500);
+
         Assert.Equal(Constant.SUCCESS, code);
 
         await Task.Delay(1000);
 
-        Assert.NotNull(server.GetClientConnection(0));
+        Assert.NotNull(server.GetClientConnection(id));
 
         await server.StopAsync();
     }
@@ -233,6 +259,8 @@ public class ConnectTests
 
         await server.StartAsync();
         var (code, id) = await client.ConnectAsync("127.0.0.1", 8898, IAuthenticator.NoAuthResponse, timeout: 2000);
+        await Task.Delay(500);
+
         Assert.Equal(Constant.FAILURE_UNSUPPORTED_PROTOCOL_VERSION, code);
 
         await Task.Delay(1000);
@@ -273,6 +301,52 @@ public class ConnectTests
         var serverInfo = await Client.RequestServerInfoAsync<DefaultServerInfo>(socketContextClient, "127.0.0.1", 8899);
 
         Assert.Null(serverInfo);
+    }
+
+    [Theory]
+    [InlineData(2, 0.0f, 100)]
+    [InlineData(5, 0.0f, 100)]
+    [InlineData(20, 0.2f, 20)]
+    public async Task Test13(int amount, float packetLoss, int latency)
+    {
+        var fakeNet = new FakeNetwork(0, latency); // 0% packet loss
+        var socketContextServer = new FakeSocketContext(fakeNet);
+        var socketContextClient = new FakeSocketContext(fakeNet);
+
+        var server = new Server(10, "127.0.0.1", 8899, 4, IAuthenticator.NoAuth, socketContextServer, IServerInfoProvider.Default, 4);
+        var client = new Client(4, IAuthenticator.NoAuth, socketContextClient);
+
+        var valuesToSend = Enumerable.Range(0, amount).ToHashSet();
+        ThreadSafe<HashSet<int>> received = new(new());
+
+        server.ReceivedData += (sender, e) =>
+        {
+            var data = e.Data;
+            received.LockedAction(r => r.Add(BitConverter.ToInt32(data)));
+            server.SendToClient(new byte[1] { 11 }, e.From, Packets.ChannelType.Default); // This will make sure that the client will receive acks.
+            output.WriteLine($"Server received data: {BitConverter.ToInt32(data)}");
+        };
+
+        await server.StartAsync();
+        var (code, id) = await client.ConnectAsync("127.0.0.1", 8899, IAuthenticator.NoAuthResponse, timeout: 10000000);
+        Assert.Equal(Constant.SUCCESS, code);
+
+        await Task.Delay(1000);
+        fakeNet._lossRate = packetLoss; // Set packet loss after connection is established
+
+        foreach (var val in valuesToSend)
+        {
+            client.SendToServer(BitConverter.GetBytes(val), Packets.ChannelType.Reliable);
+            //await Task.Delay(10);
+        }
+
+        await Task.Delay(10000);
+
+        Assert.Equal(amount, received.Value.Count);
+        // Assert that all received values are in the valuesToSend set.
+        Assert.True(received.Value.All(v => valuesToSend.Contains(v)), "Received values are not in the valuesToSend set.");
+        // And the other way around.
+        Assert.True(valuesToSend.All(v => received.Value.Contains(v)), "ValuesToSend values are not in the received set.");
     }
 }
 

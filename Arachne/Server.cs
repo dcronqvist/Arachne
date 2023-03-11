@@ -170,19 +170,17 @@ public sealed class Server
         {
             while (!token.IsCancellationRequested)
             {
-                var now = DateTime.Now;
-                var timeBeforeResend = TimeSpan.FromMilliseconds(500);
-
-                var toResend = new List<(ProtocolPacket, IPEndPoint)>();
-
+                var timeBeforeResend = TimeSpan.FromSeconds(1);
                 var connections = this._connections.LockedAction(c => c is null ? new List<RemoteConnection>() : c.Values.ToList())!;
 
                 foreach (var connection in connections)
                 {
-                    var unacked = connection.GetUnackedPacketsOlderThan(timeBeforeResend);
-                    foreach (var (p, d) in unacked)
+                    var packetsToResend = connection._reliabilityManager.LockedAction(rm => rm.GetSentPacketsOlderThan(timeBeforeResend));
+
+                    foreach (var packet in packetsToResend)
                     {
-                        this.ResendReliablePacket(p, d);
+                        this.SendPacketToRaw(packet, connection.RemoteEndPoint);
+                        connection._reliabilityManager.LockedAction(rm => rm.UpdateSentTimeForPacket(packet));
                     }
                 }
 
@@ -285,8 +283,9 @@ public sealed class Server
 
         var connection = this.GetConnectionForEndPoint(sender);
         connection._lastReceivedPacketTime = DateTime.Now;
+        connection._reliabilityManager.LockedAction(rm => rm.AddReceivedPacket(packet));
 
-        if (packet.Channel == ChannelType.ReliableOrdered || packet.Channel == ChannelType.UnreliableOrdered)
+        if (packet.Channel.HasFlag(ChannelType.Ordered))
         {
             if (connection.FollowsOrder(packet.SequenceNumber))
             {
@@ -294,13 +293,9 @@ public sealed class Server
             }
             else
             {
+                await connection.ReceiveProtocolPacket(packet);
                 return; // Packet is out of order, ignore it
             }
-        }
-
-        if (packet.Channel == ChannelType.ReliableUnordered || packet.Channel == ChannelType.ReliableOrdered)
-        {
-            connection.RegisterReliableSequenceNumberAcked(packet.GetAckedSequenceNumbers());
         }
 
         if (packet.PacketType == ProtocolPacketType.ApplicationData)
@@ -308,10 +303,8 @@ public sealed class Server
             var appData = (ApplicationData)packet;
             this.ReceivedData?.Invoke(this, new ReceivedDataServerEventArgs(appData.Data, connection));
         }
-        else
-        {
-            await connection.ReceiveProtocolPacket(packet);
-        }
+
+        await connection.ReceiveProtocolPacket(packet);
     }
 
     private RemoteConnection GetConnectionForEndPoint(IPEndPoint endPoint)
@@ -333,6 +326,7 @@ public sealed class Server
     {
         var connection = this.GetConnectionForEndPoint(endPoint);
         packet.SetSequenceNumber(connection.GetNextSequenceNumber());
+        packet.SetAckSequenceNumbers(connection._reliabilityManager.LockedAction(rm => rm.GetNextAcksToSend()));
 
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms);
@@ -340,60 +334,22 @@ public sealed class Server
         packet.Serialize(bw);
         var bytes = ms.ToArray();
 
-        if (packet.Channel == ChannelType.UnreliableUnordered)
-        {
-            this.SendPacketToUnreliablyUnordered(bytes, endPoint);
-        }
-        else if (packet.Channel == ChannelType.UnreliableOrdered)
-        {
-            this.SendPacketToUnreliablyOrdered(bytes, endPoint);
-        }
-        else if (packet.Channel == ChannelType.ReliableUnordered)
-        {
-            this.SendPacketToReliablyUnordered(bytes, endPoint, packet);
-        }
-        else if (packet.Channel == ChannelType.ReliableOrdered)
-        {
-            this.SendPacketToReliablyOrdered(bytes, endPoint, packet);
-        }
+        connection.AddSentPacket(packet);
+
+        this.SendTo(bytes, endPoint);
     }
 
-    private void SendPacketToUnreliablyUnordered(byte[] data, IPEndPoint endPoint)
-    {
-        this.SendTo(data, endPoint);
-    }
-
-    private void SendPacketToUnreliablyOrdered(byte[] data, IPEndPoint endPoint)
-    {
-        this.SendTo(data, endPoint);
-    }
-
-    private void SendPacketToReliablyUnordered(byte[] data, IPEndPoint endPoint, ProtocolPacket packet)
+    internal void SendPacketToRaw(ProtocolPacket packet, IPEndPoint endPoint)
     {
         var connection = this.GetConnectionForEndPoint(endPoint);
-        connection.RegisterReliablePacketSend(packet);
-
-        this.SendTo(data, endPoint);
-    }
-
-    private void SendPacketToReliablyOrdered(byte[] data, IPEndPoint endPoint, ProtocolPacket packet)
-    {
-        var connection = this.GetConnectionForEndPoint(endPoint);
-        connection.RegisterReliablePacketSend(packet);
-
-        this.SendTo(data, endPoint);
-    }
-
-    private void ResendReliablePacket(ProtocolPacket packet, IPEndPoint endPoint)
-    {
-        var connection = this.GetConnectionForEndPoint(endPoint);
-        connection.RegisterResentReliablePacket(packet.SequenceNumber);
 
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms);
 
         packet.Serialize(bw);
         var bytes = ms.ToArray();
+
+        connection.AddSentPacket(packet);
 
         this.SendTo(bytes, endPoint);
     }
@@ -408,7 +364,7 @@ public sealed class Server
     public void DisconnectClient(RemoteConnection conn)
     {
         conn.MoveNext(ConnectionTransition.CTSent);
-        var termination = new ConnectionTermination("Server terminated connection").SetChannelType(ChannelType.ReliableOrdered);
+        var termination = new ConnectionTermination("Server terminated connection").SetChannelType(ChannelType.Reliable | ChannelType.Ordered);
         this.SendPacketTo(termination, conn.RemoteEndPoint);
 
         this.RemoveConnection(conn);

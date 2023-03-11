@@ -15,12 +15,25 @@ internal enum ProtocolPacketType : byte
     ServerInfoResponse = 0b1001,
 }
 
+[Flags]
 public enum ChannelType : byte
 {
-    ReliableOrdered = 0b00 << 4,
-    ReliableUnordered = 0b01 << 4,
-    UnreliableOrdered = 0b10 << 4,
-    UnreliableUnordered = 0b11 << 4
+    Default = 0b00000000,
+    Reliable = 0b00010000,
+    Ordered = 0b00100000,
+}
+
+public static class ChannelTypeExtensions
+{
+    public static bool IsReliable(this ChannelType channelType)
+    {
+        return channelType.HasFlag(ChannelType.Reliable);
+    }
+
+    public static bool IsOrdered(this ChannelType channelType)
+    {
+        return channelType.HasFlag(ChannelType.Ordered);
+    }
 }
 
 internal abstract class ProtocolPacket
@@ -29,8 +42,7 @@ internal abstract class ProtocolPacket
     public ProtocolPacketType PacketType => (ProtocolPacketType)(this.PacketTypeAndChannel & 0b1111);
     public ChannelType Channel => (ChannelType)(this.PacketTypeAndChannel & 0b11110000);
     public ulong SequenceNumber { get; set; }
-    public ulong SequenceAck { get; set; }
-    public uint AckBits { get; set; } // All sequence numbers up to 32 before SequenceAck are acknowledged
+    public ulong[] AckSequenceNumbers { get; set; } = new ulong[0];
 
     public ProtocolPacket(ProtocolPacketType packetType)
     {
@@ -49,35 +61,15 @@ internal abstract class ProtocolPacket
         return this;
     }
 
-    public ulong[] GetAckedSequenceNumbers()
-    {
-        var acked = new List<ulong>();
-        for (int i = 0; i < 32; i++)
-        {
-            if ((this.AckBits & (1 << i)) != 0)
-            {
-                acked.Add(this.SequenceAck - (uint)(i + 1));
-            }
-        }
-
-        return acked.ToArray();
-    }
-
     internal ProtocolPacket SetSequenceNumber(ulong sequenceNumber)
     {
         this.SequenceNumber = sequenceNumber;
         return this;
     }
 
-    internal ProtocolPacket SetLatestSequenceAck(ulong sequenceAck)
+    internal ProtocolPacket SetAckSequenceNumbers(ulong[] ackSequenceNumbers)
     {
-        this.SequenceAck = sequenceAck;
-        return this;
-    }
-
-    internal ProtocolPacket SetAckBits(uint ackBits)
-    {
-        this.AckBits = ackBits;
+        this.AckSequenceNumbers = ackSequenceNumbers;
         return this;
     }
 
@@ -85,8 +77,11 @@ internal abstract class ProtocolPacket
     {
         writer.Write(this.PacketTypeAndChannel);
         writer.Write(this.SequenceNumber);
-        writer.Write(this.SequenceAck);
-        writer.Write(this.AckBits);
+        writer.Write(this.AckSequenceNumbers.Length);
+        foreach (var ackSequenceNumber in this.AckSequenceNumbers)
+        {
+            writer.Write(ackSequenceNumber);
+        }
         this.SerializeProtocolPacket(writer);
     }
 
@@ -96,13 +91,17 @@ internal abstract class ProtocolPacket
         ProtocolPacketType ppt = (ProtocolPacketType)(packetTypeAndChannel & 0b00001111);
         ChannelType ppc = (ChannelType)(packetTypeAndChannel & 0b11110000);
         ulong seq = reader.ReadUInt64();
-        ulong seqAck = reader.ReadUInt64();
-        uint ackBits = reader.ReadUInt32();
         var packet = CreatePacketOfType(ppt);
         packet.SetChannelType(ppc);
         packet.SetSequenceNumber(seq);
-        packet.SetLatestSequenceAck(seqAck);
-        packet.SetAckBits(ackBits);
+
+        int ackCount = reader.ReadInt32();
+        packet.AckSequenceNumbers = new ulong[ackCount];
+        for (int i = 0; i < ackCount; i++)
+        {
+            packet.AckSequenceNumbers[i] = reader.ReadUInt64();
+        }
+
         packet.DeserializeProtocolPacket(reader);
         return packet;
     }
