@@ -272,6 +272,7 @@ public sealed class Client
             return;
         }
 
+        this._lastReceivedSequenceNumber = packet.SequenceNumber;
         this._reliabilityManager.LockedAction(rm =>
         {
             rm.AddReceivedPacket(packet);
