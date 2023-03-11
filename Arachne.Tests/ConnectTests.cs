@@ -360,6 +360,55 @@ public class ConnectTests
         // And the other way around.
         Assert.True(valuesToSend.All(v => received.Value.Contains(v)), "ValuesToSend values are not in the received set.");
     }
+
+    [Theory]
+    [InlineData(2, 0.0f, 100)]
+    [InlineData(5, 0.0f, 100)]
+    [InlineData(20, 0.5f, 20)]
+    [InlineData(50, 0.4f, 20)]
+    public async Task Test14(int amount, float packetLoss, int latency)
+    {
+        var fakeNet = new FakeNetwork(0, 0, latency); // 0% packet loss
+        var socketContextServer = new FakeSocketContext(fakeNet);
+        var socketContextClient = new FakeSocketContext(fakeNet);
+
+        var server = new Server(10, "127.0.0.1", 8899, 4, IAuthenticator.NoAuth, socketContextServer, IServerInfoProvider.Default, 4);
+        var client = new Client(4, IAuthenticator.NoAuth, socketContextClient);
+
+        var valuesToSend = Enumerable.Range(0, amount).ToHashSet();
+        ThreadSafe<HashSet<int>> received = new(new());
+
+        client.ReceivedData += (sender, e) =>
+        {
+            var data = e.Data;
+            output.WriteLine($"Client received data {BitConverter.ToInt32(data)}");
+            received.LockedAction(r => r.Add(BitConverter.ToInt32(data)));
+        };
+
+        await server.StartAsync();
+        var (code, id) = await client.ConnectAsync("127.0.0.1", 8899, IAuthenticator.NoAuthResponse, timeout: 10000000);
+        Assert.Equal(Constant.SUCCESS, code);
+
+        await Task.Delay(1000);
+        fakeNet._lossRate = packetLoss; // Set packet loss after connection is established
+
+        var connection = server.GetClientConnection(id);
+
+        foreach (var val in valuesToSend)
+        {
+            server.SendToClient(BitConverter.GetBytes(val), connection, Packets.ChannelType.Reliable);
+            output.WriteLine($"Server sent data {val}");
+            await Task.Delay(latency);
+        }
+
+        await Task.Delay(10000);
+
+        Assert.Equal(amount, received.Value.Count);
+        // Assert that all received values are in the valuesToSend set.
+        Assert.True(received.Value.All(v => valuesToSend.Contains(v)), "Received values are not in the valuesToSend set.");
+        // And the other way around.
+        Assert.True(valuesToSend.All(v => received.Value.Contains(v)), "ValuesToSend values are not in the received set.");
+    }
 }
 
 class TestPacket : ISerializable
