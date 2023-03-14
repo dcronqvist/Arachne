@@ -45,14 +45,14 @@ internal class UDPSocketContext : ISocketContext
 {
     private Socket _socket;
     public int BoundPort => this._socket == null ? 0 : ((IPEndPoint)this._socket.LocalEndPoint!).Port;
-    private MovingAverage _sentBytesPerSecond;
-    private MovingAverage _receivedBytesPerSecond;
+    private ThreadSafe<MovingAverage> _sentBytesPerSecond;
+    private ThreadSafe<MovingAverage> _receivedBytesPerSecond;
 
     public UDPSocketContext()
     {
         this._socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-        this._sentBytesPerSecond = new MovingAverage(10);
-        this._receivedBytesPerSecond = new MovingAverage(10);
+        this._sentBytesPerSecond = new(new MovingAverage(10));
+        this._receivedBytesPerSecond = new(new MovingAverage(10));
     }
 
     public void Bind(IPEndPoint endPoint)
@@ -78,7 +78,7 @@ internal class UDPSocketContext : ISocketContext
         var data = new byte[x.ReceivedBytes];
         Array.Copy(buffer, data, x.ReceivedBytes);
 
-        this._receivedBytesPerSecond.Add((uint)x.ReceivedBytes);
+        this._receivedBytesPerSecond.LockedAction(q => q.Add((uint)x.ReceivedBytes));
         return new ReceiveResult(data, (IPEndPoint)x.RemoteEndPoint);
     }
 
@@ -97,31 +97,31 @@ internal class UDPSocketContext : ISocketContext
         var data = new byte[received];
         Array.Copy(buffer, data, received);
 
-        this._receivedBytesPerSecond.Add((uint)received);
+        this._receivedBytesPerSecond.LockedAction(q => q.Add((uint)received));
         return new ReceiveResult(data, (IPEndPoint)this._socket.RemoteEndPoint!);
     }
 
     public void SendTo(byte[] data, IPEndPoint remoteEP)
     {
         var length = data.Length;
-        this._sentBytesPerSecond.Add((uint)length);
+        this._sentBytesPerSecond.LockedAction(q => q.Add((uint)length));
         this._socket.SendTo(data, 0, length, SocketFlags.None, remoteEP);
     }
 
     public void SendAsClient(byte[] data)
     {
         var length = data.Length;
-        this._sentBytesPerSecond.Add((uint)length);
+        this._sentBytesPerSecond.LockedAction(q => q.Add((uint)length));
         this._socket.Send(data, 0, length, SocketFlags.None);
     }
 
     public uint GetSentBytesPerSecond()
     {
-        return this._sentBytesPerSecond.GetAverage();
+        return this._sentBytesPerSecond.LockedAction(q => q.GetAverage());
     }
 
     public uint GetReceivedBytesPerSecond()
     {
-        return this._receivedBytesPerSecond.GetAverage();
+        return this._receivedBytesPerSecond.LockedAction(q => q.GetAverage());
     }
 }
