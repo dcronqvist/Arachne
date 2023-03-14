@@ -67,6 +67,11 @@ public sealed class Client
         });
     }
 
+    public ISocketContext GetSocketContext()
+    {
+        return this._socket;
+    }
+
     private ulong GetNextSequenceNumber()
     {
         return this._nextSequenceNumber++;

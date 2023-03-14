@@ -78,6 +78,11 @@ public sealed class Server
         return this._nextID++;
     }
 
+    public ISocketContext GetSocketContext()
+    {
+        return this._listener;
+    }
+
     internal void TriggerConnRequestedEvent(RemoteConnection rc)
     {
         ConnectionRequested?.Invoke(this, new ConnectionEventArgs(rc));
