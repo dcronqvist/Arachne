@@ -129,4 +129,14 @@ internal class FakeSocketContext : ISocketContext
     {
         this._network.Send(data, this._local!, (IPEndPoint)remoteEP);
     }
+
+    public uint GetSentBytesPerSecond()
+    {
+        return 0;
+    }
+
+    public uint GetReceivedBytesPerSecond()
+    {
+        return 0;
+    }
 }

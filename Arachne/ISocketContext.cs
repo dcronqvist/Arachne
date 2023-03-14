@@ -28,4 +28,7 @@ public interface ISocketContext
     void SendAsClient(byte[] data);
     Task<ReceiveResult> ReceiveAsync(CancellationToken token);
     Task<ReceiveResult> ReceiveAsClient(CancellationToken token);
+
+    uint GetSentBytesPerSecond();
+    uint GetReceivedBytesPerSecond();
 }
