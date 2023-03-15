@@ -29,7 +29,7 @@ public class RemoteConnection : FSM<ConnectionState, ConnectionTransition>
     private ulong _nextSequenceNumber = 1;
     internal DateTime _lastReceivedPacketTime;
     internal ThreadSafe<ReliabilityManager> _reliabilityManager = new(new());
-    internal ThreadSafe<DeliveryService<byte[]>> _deliveryService = new(new());
+    public ThreadSafe<DeliveryService<byte[]>> DeliveryService = new(new());
 
     public IPEndPoint RemoteEndPoint { get; private set; }
     public bool IsConnected => base.CurrentState == ConnectionState.AuthenticatedConnected;

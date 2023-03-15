@@ -297,7 +297,7 @@ public sealed class Server
             var appData = (ApplicationData)packet;
             var receive = new ReceivedDataServerEventArgs(appData.Data, connection);
 
-            var delivered = connection._deliveryService.LockedAction(ds =>
+            var delivered = connection.DeliveryService.LockedAction(ds =>
             {
                 return ds!.TryDeliverToWaiter(appData.Data);
             });
