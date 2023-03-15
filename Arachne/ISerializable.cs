@@ -3,5 +3,5 @@ namespace Arachne;
 public interface ISerializable
 {
     void Serialize(BinaryWriter writer);
-    static abstract object Deserialize(BinaryReader reader);
+    static virtual object Deserialize(BinaryReader reader) { throw new NotImplementedException(); }
 }

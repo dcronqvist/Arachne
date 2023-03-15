@@ -55,7 +55,7 @@ public sealed class Server
     public event EventHandler<ConnectionEventArgs>? ConnectionTerminated;
     public event EventHandler<ConnectionEventArgs>? ClientDisconnected;
 
-    public Server(int maxConns, string address, int port, uint protocolID, IAuthenticator authenticator, IServerInfoProvider infoProvider, params uint[] supportedClientProtocols) : this(maxConns, address, port, protocolID, authenticator, new UDPSocketContext(), infoProvider, supportedClientProtocols)
+    public Server(int maxConns, string address, int port, uint protocolID, IAuthenticator authenticator, IServerInfoProvider infoProvider, params uint[] supportedClientProtocols) : this(maxConns, address, port, protocolID, authenticator, new UDPSocketContext(5), infoProvider, supportedClientProtocols)
     { }
 
     public Server(int maxConns, string address, int port, uint protocolID, IAuthenticator authenticator, ISocketContext context, IServerInfoProvider infoProvider, params uint[] supportedClientProtocols)
@@ -180,12 +180,12 @@ public sealed class Server
 
                 foreach (var connection in connections)
                 {
-                    var packetsToResend = connection._reliabilityManager.LockedAction(rm => rm.GetSentPacketsOlderThan(timeBeforeResend));
+                    var packetsToResend = connection._reliabilityManager.LockedAction(rm => rm!.GetSentPacketsOlderThan(timeBeforeResend));
 
-                    foreach (var packet in packetsToResend)
+                    foreach (var packet in packetsToResend!)
                     {
                         this.SendPacketToRaw(packet, connection.RemoteEndPoint);
-                        connection._reliabilityManager.LockedAction(rm => rm.UpdateSentTimeForPacket(packet));
+                        connection._reliabilityManager.LockedAction(rm => rm!.UpdateSentTimeForPacket(packet));
                     }
                 }
 
@@ -231,7 +231,7 @@ public sealed class Server
 
     internal ulong GetClientID(IPEndPoint endpoint)
     {
-        return this._connections.LockedAction(c => c[endpoint].ClientID);
+        return this._connections.LockedAction(c => c![endpoint].ClientID);
     }
 
     private void SendTo(byte[] data, IPEndPoint endPoint)
@@ -260,7 +260,7 @@ public sealed class Server
         }
     }
 
-    protected void OnReceive(byte[] data, IPEndPoint sender)
+    private void OnReceive(byte[] data, IPEndPoint sender)
     {
         // Handle received data
         using var ms = new MemoryStream(data);
@@ -288,25 +288,23 @@ public sealed class Server
 
         var connection = this.GetConnectionForEndPoint(sender);
         connection._lastReceivedPacketTime = DateTime.Now;
-        connection._reliabilityManager.LockedAction(rm => rm.AddReceivedPacket(packet));
-
-        if (connection.FollowsOrder(packet))
-        {
-            connection.SetLastReceivedSequenceNumber(packet.SequenceNumber);
-        }
-        else
-        {
-            // Out of order, so don't give it to the connection
-            await connection.ReceiveProtocolPacket(packet);
-            return;
-        }
+        connection._reliabilityManager.LockedAction(rm => rm!.AddReceivedPacket(packet));
 
         await connection.ReceiveProtocolPacket(packet);
 
         if (packet.PacketType == ProtocolPacketType.ApplicationData)
         {
             var appData = (ApplicationData)packet;
-            this.ReceivedData?.Invoke(this, new ReceivedDataServerEventArgs(appData.Data, connection));
+            var receive = new ReceivedDataServerEventArgs(appData.Data, connection);
+
+            var delivered = connection._deliveryService.LockedAction(ds =>
+            {
+                return ds!.TryDeliverToWaiter(appData.Data);
+            });
+
+            if (delivered) return;
+
+            this.ReceivedData?.Invoke(this, receive);
         }
     }
 
@@ -329,7 +327,7 @@ public sealed class Server
     {
         var connection = this.GetConnectionForEndPoint(endPoint);
         packet.SetSequenceNumber(connection.GetNextSequenceNumber());
-        packet.SetAckSequenceNumbers(connection._reliabilityManager.LockedAction(rm => rm.GetNextAcksToSend()));
+        packet.SetAckSequenceNumbers(connection._reliabilityManager.LockedAction(rm => rm!.GetNextAcksToSend())!);
 
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms);
@@ -367,7 +365,7 @@ public sealed class Server
     public void DisconnectClient(RemoteConnection conn)
     {
         conn.MoveNext(ConnectionTransition.CTSent);
-        var termination = new ConnectionTermination("Server terminated connection").SetChannelType(ChannelType.Reliable | ChannelType.Ordered);
+        var termination = new ConnectionTermination("Server terminated connection").SetChannelType(ChannelType.Reliable);
         this.SendPacketTo(termination, conn.RemoteEndPoint);
 
         this.RemoveConnection(conn);

@@ -59,6 +59,12 @@ public class ConnectTests
         this.output = output;
     }
 
+    public bool IsSorted<T>(IEnumerable<T> collection) where T : IComparable<T>
+    {
+        var sorted = collection.OrderBy(x => x);
+        return sorted.SequenceEqual(collection);
+    }
+
     [Fact]
     public async Task Test1()
     {
@@ -308,6 +314,7 @@ public class ConnectTests
     [InlineData(5, 0.0f, 100)]
     [InlineData(20, 0.5f, 20)]
     [InlineData(50, 0.4f, 20)]
+    [InlineData(1000, 0.03f, 20)] // Big test with 3% packet loss, 1000 reliable packets
     public async Task Test13(int amount, float packetLoss, int latency)
     {
         var fakeNet = new FakeNetwork(0, 0, latency); // 0% packet loss
@@ -324,7 +331,7 @@ public class ConnectTests
         {
             var data = e.Data;
             received.LockedAction(r => r.Add(BitConverter.ToInt32(data)));
-            server.SendToClient(new byte[1] { 11 }, e.From, Packets.ChannelType.Default); // This will make sure that the client will receive acks.
+            server.SendToClient(new byte[1] { 11 }, e.From, Packets.ChannelType.Unreliable); // This will make sure that the client will receive acks.
             output.WriteLine($"Server received data {BitConverter.ToInt32(data)}");
         };
 
@@ -335,7 +342,7 @@ public class ConnectTests
 
         client.ResentPacket += (sender, e) =>
         {
-            output.WriteLine($"Client resent packet {e}");
+            //output.WriteLine($"Client resent packet {e}");
         };
 
         await server.StartAsync();
@@ -348,7 +355,7 @@ public class ConnectTests
         foreach (var val in valuesToSend)
         {
             var seq = client.SendToServer(BitConverter.GetBytes(val), Packets.ChannelType.Reliable);
-            output.WriteLine($"Client sent data {val} with seq {seq}");
+            //output.WriteLine($"Client sent data {val} with seq {seq}");
             await Task.Delay(latency);
         }
 
@@ -366,6 +373,7 @@ public class ConnectTests
     [InlineData(5, 0.0f, 100)]
     [InlineData(20, 0.5f, 20)]
     [InlineData(50, 0.4f, 20)]
+    [InlineData(1000, 0.03f, 20)] // Big test with 3% packet loss, 1000 reliable packets
     public async Task Test14(int amount, float packetLoss, int latency)
     {
         var fakeNet = new FakeNetwork(0, 0, latency); // 0% packet loss
@@ -404,6 +412,45 @@ public class ConnectTests
         await Task.Delay(10000);
 
         Assert.Equal(amount, received.Value.Count);
+        // Assert that all received values are in the valuesToSend set.
+        Assert.True(received.Value.All(v => valuesToSend.Contains(v)), "Received values are not in the valuesToSend set.");
+        // And the other way around.
+        Assert.True(valuesToSend.All(v => received.Value.Contains(v)), "ValuesToSend values are not in the received set.");
+    }
+
+    [Theory]
+    [InlineData(20, 0.5f, 20)]
+    public async Task Test15(int amount, float packetLoss, int latency)
+    {
+        var fakeNet = new FakeNetwork(0, 0, latency); // 0% packet loss
+        var socketContextServer = new FakeSocketContext(fakeNet);
+        var socketContextClient = new FakeSocketContext(fakeNet);
+
+        var server = new Server(10, "127.0.0.1", 8899, 4, IAuthenticator.NoAuth, socketContextServer, IServerInfoProvider.Default, 4);
+        var client = new Client(4, IAuthenticator.NoAuth, socketContextClient);
+
+        var valuesToSend = Enumerable.Range(0, amount).ToHashSet();
+        ThreadSafe<HashSet<int>> received = new(new());
+
+        await server.StartAsync();
+        var (code, id) = await client.ConnectAsync("127.0.0.1", 8899, IAuthenticator.NoAuthResponse, timeout: 10000000);
+        Assert.Equal(Constant.SUCCESS, code);
+
+        await Task.Delay(1000);
+        fakeNet._lossRate = packetLoss; // Set packet loss after connection is established
+
+        var connection = server.GetClientConnection(id);
+
+        foreach (var val in valuesToSend)
+        {
+            server.SendToClient(BitConverter.GetBytes(val), connection, Packets.ChannelType.Reliable);
+            output.WriteLine($"Server sent data {val}");
+            var data = await client.ReceiveNextFromServerAsync(5000);
+            output.WriteLine($"Client received data with length {data.Length}");
+            received.LockedAction(r => r.Add(BitConverter.ToInt32(data)));
+        }
+
+        Assert.Equal(20, received.Value.Count);
         // Assert that all received values are in the valuesToSend set.
         Assert.True(received.Value.All(v => valuesToSend.Contains(v)), "Received values are not in the valuesToSend set.");
         // And the other way around.

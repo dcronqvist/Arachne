@@ -110,13 +110,13 @@ internal class FakeSocketContext : ISocketContext
 
     public async Task<ReceiveResult> ReceiveAsClient(CancellationToken token)
     {
-        var x = await this._network.ReceiveAsync(this._local, token);
+        var x = await this._network.ReceiveAsync(this._local!, token);
         return new ReceiveResult(x.Item1, x.Item2);
     }
 
     public async Task<ReceiveResult> ReceiveAsync(CancellationToken token)
     {
-        var x = await this._network.ReceiveAsync(this._local, token);
+        var x = await this._network.ReceiveAsync(this._local!, token);
         return new ReceiveResult(x.Item1, x.Item2);
     }
 

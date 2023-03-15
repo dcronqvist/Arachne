@@ -18,9 +18,8 @@ internal enum ProtocolPacketType : byte
 [Flags]
 public enum ChannelType : byte
 {
-    Default = 0b00000000,
-    Reliable = 0b00010000,
-    Ordered = 0b00100000,
+    Unreliable = 0b00000000,
+    Reliable = 0b00010000
 }
 
 public static class ChannelTypeExtensions
@@ -28,11 +27,6 @@ public static class ChannelTypeExtensions
     public static bool IsReliable(this ChannelType channelType)
     {
         return channelType.HasFlag(ChannelType.Reliable);
-    }
-
-    public static bool IsOrdered(this ChannelType channelType)
-    {
-        return channelType.HasFlag(ChannelType.Ordered);
     }
 }
 

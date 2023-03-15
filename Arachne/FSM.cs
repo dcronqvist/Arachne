@@ -45,13 +45,13 @@ public class FSM<TState, TTransition> where TState : Enum where TTransition : En
     {
         if (!_transitions.ContainsKey(CurrentState))
         {
-            newState = default;
+            newState = default!;
             return false;
         }
 
         if (!_transitions[CurrentState].ContainsKey(transition))
         {
-            newState = default;
+            newState = default!;
             return false;
         }
 

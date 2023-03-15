@@ -34,10 +34,10 @@ public sealed class Client
     private bool _readyToReceive = false;
     private CancellationTokenSource _cts;
     private IAuthenticator _authenticator;
+    private DeliveryService<ProtocolPacket> _deliveryService = new();
 
     // Connection stuff
     private ulong _nextSequenceNumber = 1;
-    private ulong _lastReceivedSequenceNumber = 0;
 
     // Reliability stuff
     private ThreadSafe<ReliabilityManager> _reliabilityManager = new(new());
@@ -47,7 +47,7 @@ public sealed class Client
     public event EventHandler<ulong>? ServerAckedPacket;
     public event EventHandler<ulong>? ResentPacket;
 
-    public Client(uint protocolID, IAuthenticator authenticator) : this(protocolID, authenticator, new UDPSocketContext())
+    public Client(uint protocolID, IAuthenticator authenticator) : this(protocolID, authenticator, new UDPSocketContext(5))
     { }
 
     public Client(uint protocolID, IAuthenticator auth, ISocketContext context)
@@ -60,7 +60,7 @@ public sealed class Client
 
         this._reliabilityManager.LockedAction(rm =>
         {
-            rm.SequenceNumberAcked += (s, e) =>
+            rm!.SequenceNumberAcked += (s, e) =>
             {
                 this.ServerAckedPacket?.Invoke(this, e);
             };
@@ -88,12 +88,13 @@ public sealed class Client
         this._socket.Connect(new IPEndPoint(IPAddress.Parse(address), port));
 
         _ = Task.Run(() => this.ReliabilityLoopAsync(loopToken));
+        this._receiveTask = Task.Run(() => this.ReceiveLoopAsync(loopToken));
 
         // Send connect request
         var connectRequest = new ConnectionRequest(this._protocolID, 0).SetChannelType(ChannelType.Reliable);
         this.SendPacket(connectRequest);
 
-        var response = await this.ReceivePacketAsync<ProtocolPacket>(token);
+        var response = await this.ReceivePacketAsync<ProtocolPacket>(timeout);
 
         if (response is null)
         {
@@ -108,7 +109,7 @@ public sealed class Client
             var challResp = await respondToChallenge(challenge.Challenge);
             var challRespPacket = new ConnectionChallengeResponse(challResp).SetChannelType(ChannelType.Reliable);
             this.SendPacket(challRespPacket);
-            connectResponse = await this.ReceivePacketAsync<ConnectionResponse>(token);
+            connectResponse = await this.ReceivePacketAsync<ConnectionResponse>(timeout);
         }
         else
         {
@@ -130,7 +131,6 @@ public sealed class Client
 
         // -------------------------
 
-        this._receiveTask = Task.Run(() => this.ReceiveLoopAsync(loopToken));
         this._sendTask = Task.Run(() => this.SendLoopAsync(loopToken));
         _ = Task.Run(() => this.KeepAliveLoopAsync(loopToken));
 
@@ -149,7 +149,7 @@ public sealed class Client
             var resendTime = TimeSpan.FromMilliseconds(1000);
             this._reliabilityManager.LockedAction(rm =>
             {
-                var packsToResend = rm.GetSentPacketsOlderThan(resendTime);
+                var packsToResend = rm!.GetSentPacketsOlderThan(resendTime);
 
                 foreach (var p in packsToResend)
                 {
@@ -171,39 +171,24 @@ public sealed class Client
             var now = DateTime.Now;
             if (now - this._lastPacketSent > TimeSpan.FromMilliseconds(500))
             {
-                this.SendPacket(new ConnectionKeepAlive().SetChannelType(ChannelType.Default));
+                this.SendPacket(new ConnectionKeepAlive().SetChannelType(ChannelType.Unreliable));
             }
             await Task.Delay(50);
         }
     }
 
-    private async Task<ReceiveResult> ReceiveAsync(CancellationToken token)
+    // private async Task<ReceiveResult> ReceiveAsync(CancellationToken token)
+    // {
+    //     return await this._socket.ReceiveAsClient(token);
+    // }
+
+    private async Task<T?> ReceivePacketAsync<T>(int timeout) where T : ProtocolPacket
     {
-        return await this._socket.ReceiveAsClient(token);
-    }
+        var packet = await this._deliveryService.AwaitDeliveryAsync(timeout);
 
-    private async Task<T> ReceivePacketAsync<T>(CancellationToken token) where T : ProtocolPacket
-    {
-        try
-        {
-            var result = await this.ReceiveAsync(token);
+        if (packet is null) return null;
 
-            using var ms = new MemoryStream(result.Data);
-            using var br = new BinaryReader(ms);
-
-            var packet = ProtocolPacket.Deserialize(br);
-
-            this._reliabilityManager.LockedAction(rm =>
-            {
-                rm.AddReceivedPacket(packet);
-            });
-
-            return packet as T;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
+        return (T)packet;
     }
 
     private async Task ReceiveLoopAsync(CancellationToken token)
@@ -261,46 +246,11 @@ public sealed class Client
     private void ProcessPacket(ProtocolPacket packet)
     {
         this.ReceivePacket(packet);
-    }
 
-    private bool FollowsOrder(ProtocolPacket packet)
-    {
-        if (packet.Channel.IsOrdered() && packet.Channel.IsReliable())
+        if (this._deliveryService.TryDeliverToWaiter(packet))
         {
-            return packet.SequenceNumber == this._lastReceivedSequenceNumber + 1;
-        }
-        else if (packet.Channel.IsOrdered())
-        {
-            return packet.SequenceNumber > this._lastReceivedSequenceNumber;
-        }
-
-        return true;
-    }
-
-    private void ReceivePacket(ProtocolPacket packet)
-    {
-        if (packet.PacketType == ProtocolPacketType.ConnectionTermination)
-        {
-            // Server wants to terminate the connection. Acknowledge
-            var ack = new ConnectionTerminationAck().SetChannelType(ChannelType.Reliable | ChannelType.Ordered);
-            this.SendPacket(ack);
-            // TODO: Close client.
-            this.DisconnectedByServer?.Invoke(this, EventArgs.Empty);
             return;
         }
-
-        this._reliabilityManager.LockedAction(rm =>
-        {
-            rm.AddReceivedPacket(packet);
-        });
-
-        if (!this.FollowsOrder(packet))
-        {
-            // Packet is out of order. Ignore it.
-            return;
-        }
-
-        this._lastReceivedSequenceNumber = packet.SequenceNumber;
 
         if (packet.PacketType == ProtocolPacketType.ApplicationData)
         {
@@ -309,12 +259,30 @@ public sealed class Client
         }
     }
 
+    private void ReceivePacket(ProtocolPacket packet)
+    {
+        if (packet.PacketType == ProtocolPacketType.ConnectionTermination)
+        {
+            // Server wants to terminate the connection. Acknowledge
+            var ack = new ConnectionTerminationAck().SetChannelType(ChannelType.Reliable);
+            this.SendPacket(ack);
+            // TODO: Close client.
+            this.DisconnectedByServer?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        this._reliabilityManager.LockedAction(rm =>
+        {
+            rm!.AddReceivedPacket(packet);
+        });
+    }
+
     internal ulong SendPacket(ProtocolPacket packet)
     {
         this._lastPacketSent = DateTime.Now;
 
         packet.SetSequenceNumber(this.GetNextSequenceNumber());
-        packet.SetAckSequenceNumbers(this._reliabilityManager.LockedAction(rm => rm.GetNextAcksToSend()));
+        packet.SetAckSequenceNumbers(this._reliabilityManager.LockedAction(rm => rm!.GetNextAcksToSend())!);
 
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms);
@@ -327,7 +295,7 @@ public sealed class Client
             // Reliability stuff
             this._reliabilityManager.LockedAction(rm =>
             {
-                rm.AddSentPacket(packet);
+                rm!.AddSentPacket(packet);
             });
         }
 
@@ -350,7 +318,7 @@ public sealed class Client
             // Reliability stuff
             this._reliabilityManager.LockedAction(rm =>
             {
-                rm.AddSentPacket(packet);
+                rm!.AddSentPacket(packet);
             });
         }
 
@@ -365,9 +333,21 @@ public sealed class Client
         return this.SendPacket(packet);
     }
 
+    public async Task<byte[]> ReceiveNextFromServerAsync(int timeout)
+    {
+        var packet = await this._deliveryService.AwaitDeliveryAsync(timeout);
+
+        if (packet is ApplicationData appData)
+        {
+            return appData.Data;
+        }
+
+        return Array.Empty<byte>();
+    }
+
     public void Disconnect()
     {
-        var packet = new ConnectionTermination("Disconnect").SetChannelType(ChannelType.Reliable | ChannelType.Ordered);
+        var packet = new ConnectionTermination("Disconnect").SetChannelType(ChannelType.Reliable);
         this._readyToSend = false;
         this.SendPacket(packet);
         this._socket.Close();
@@ -405,7 +385,7 @@ public sealed class Client
 
             return (T)T.Deserialize(br2);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             return default!;
         }
@@ -413,7 +393,7 @@ public sealed class Client
 
     public static async Task<T> RequestServerInfoAsync<T>(string host, int port, int timeout = 2000) where T : ISerializable
     {
-        return await RequestServerInfoAsync<T>(new UDPSocketContext(), host, port, timeout);
+        return await RequestServerInfoAsync<T>(new UDPSocketContext(5), host, port, timeout);
     }
 
     public static async Task<T> RequestServerInfoAsync<T>(ISocketContext context, string host, int port, int timeout = 2000) where T : ISerializable
