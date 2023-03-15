@@ -6,13 +6,11 @@ The Arachne protocol is a simple protocol that allows for clients to connect to 
 
 It uses UDP for all communication and allows for 4 different ways of communication:
 
-- **Unreliably unordered** - This is the default way of communication, and is the fastest. It is not guaranteed that the message will arrive, and it is not guaranteed that the messages will arrive in the order they were sent.
+- **Unreliably**, fastest way of communication, but packets can be lost.
 
-- **Reliably unordered** - This is a slower way of communication, but it is guaranteed that the message will arrive, however not guaranteed that the messages will arrive in the order they were sent.
+- **Reliably**, slower way of communication, but packets will never be lost.
 
-- **Unreliably ordered** - No guarantee that the message will arrive, however it is guaranteed that the messages will arrive in the order they were sent.
-
-- **Reliably ordered** - This is the slowest way of communication, but it is guaranteed that the message will arrive, and it is guaranteed that the messages will arrive in the order they were sent.
+No regard for order is taken for ANY packets sent, so the order of received packets is not guaranteed to be the same as the order of sent packets.
 
 ### Protocol packets
 
@@ -25,10 +23,8 @@ The protocol uses 4 different channels and has 8 different packet types. Both th
 The 4 different channels are:
 
 ```
-Reliable ordered        = 0x00
-Reliable unordered      = 0x10
-Unreliable ordered      = 0x20
-Unreliable unordered    = 0x30
+Unreliable  = 0x00
+Reliable    = 0x10
 ```
 
 The 8 different packet types are:
@@ -42,9 +38,11 @@ Connection keep alive           = 0x04
 Application data                = 0x05
 Connection termination          = 0x06
 Connection termination ack      = 0x07
+Server info request             = 0x08
+Server info response            = 0x09
 ```
 
-So, a packet header with a first byte of `0x00` would be a `Connection request` packet on the `Reliable ordered` channel. A packet header with a first byte of `0x25` would be an `Application data` packet on the `Unreliable ordered` channel.
+So, a packet header with a first byte of `0x00` would be a `Connection request` packet on the `Unreliable` channel. A packet header with a first byte of `0x15` would be an `Application data` packet on the `Reliable` channel.
 
 The entire packet header looks like the following:
 
@@ -74,7 +72,7 @@ This packet is sent by the client to the server, and is used to request a connec
 If the given `protocol id` and `protocol version` is not supported by the server, the server will respond with a `CRS` packet with response code `0x01` (unsupported protocol).
 
 ```
-[header]            (21 bytes) (always sent on the Reliable ordered channel)
+[header]            (21 bytes) (always sent on the Reliable channel)
 ...
 [protocol id]       (4 bytes)
 [protocol version]  (4 bytes)
@@ -87,7 +85,7 @@ This packet is sent by the server to the client, and is used to challenge the cl
 The packet can contain anything that the developer so chooses, and it is up to the developer to implement this.
 
 ```
-[header]            (21 bytes) (always sent on the Reliable ordered channel)
+[header]            (21 bytes) (always sent on the Reliable channel)
 ...
 [challenge length]  (4 bytes)
 [challenge]         (variable length)
@@ -98,7 +96,7 @@ The packet can contain anything that the developer so chooses, and it is up to t
 This packet is sent by the client to the server, and is used to respond to the challenge that the server sent. The server will then respond with a `CRS` packet.
 
 ```
-[header]            (21 bytes) (always sent on the Reliable ordered channel)
+[header]            (21 bytes) (always sent on the Reliable channel)
 ...
 [response length]   (4 bytes)
 [response]          (variable length)
@@ -109,7 +107,7 @@ This packet is sent by the client to the server, and is used to respond to the c
 This packet is sent by the server to the client, and is used to respond to a Connection Request packet. This response will contain a code that will indicate the outcome of the connection request.
 
 ```
-[header]        (21 bytes) (always sent on the Reliable ordered channel)
+[header]        (21 bytes) (always sent on the Reliable channel)
 ...
 [response code] (1 byte)
 [client id]     (8 bytes)
@@ -126,7 +124,7 @@ This packet is sent by the client to the server, and is used to keep the connect
 If no `KA` packets are received from a connected client within a specified timeout, the server will consider the client to be disconnected and will remove the client from its list of connected clients.
 
 ```
-[header] (21 bytes) (always sent on the Unreliable unordered channel)
+[header] (21 bytes) (always sent on the Unreliable channel)
 ...
 (no data, packet type enough)
 ```
@@ -149,7 +147,7 @@ This packet can be sent by either the client or the server, and is used to send 
 This packet is sent by either the client or the server, and is used to terminate the connection. The packet can contain a reason for the termination. The other party should then respond with a `CTA` packet, to acknowledge the termination.
 
 ```
-[header]        (21 bytes) (always sent on the Reliable ordered channel)
+[header]        (21 bytes) (always sent on the Reliable channel)
 ...
 [reason length] (4 bytes)
 [reason string] (variable length, UTF-8 encoded)
@@ -160,7 +158,31 @@ This packet is sent by either the client or the server, and is used to terminate
 This packet is sent by either the client or the server, and is used to acknowledge the termination of the connection.
 
 ```
-[header] (21 bytes) (always sent on the Reliable ordered channel)
+[header] (21 bytes) (always sent on the Reliable channel)
 ...
 (no data, packet type enough)
 ```
+
+### Server info
+
+#### **Server Info Request (SIR)**
+
+This packet is sent by the client to the server, and is used to request information about the server. The server will then respond with a `SIRS` packet.
+
+```
+[header] (21 bytes) (always sent on the Unreliable channel)
+...
+(no data, packet type enough)
+```
+
+#### **Server Info Response (SIRS)**
+
+This packet is sent by the server to the client, and is used to respond to a `SIR` packet. This response will contain information about the server.
+
+```
+[header]        (21 bytes) (always sent on the Unreliable channel)
+...
+[info]          (variable length, raw bytes)
+```
+
+The `info` field can contain any kind of data that the developer so chooses, and it is up to the developer to implement this, using an `IServerInfoProvider` implementation.

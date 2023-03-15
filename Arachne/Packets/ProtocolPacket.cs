@@ -71,11 +71,26 @@ internal abstract class ProtocolPacket
     {
         writer.Write(this.PacketTypeAndChannel);
         writer.Write(this.SequenceNumber);
-        writer.Write(this.AckSequenceNumbers.Length);
-        foreach (var ackSequenceNumber in this.AckSequenceNumbers)
+
+        var firstAckSequenceNumber = this.AckSequenceNumbers.LastOrDefault();
+        writer.Write(firstAckSequenceNumber);
+
+        uint ackBits = 0;
+        for (uint i = 0; i < 32; i++)
         {
-            writer.Write(ackSequenceNumber);
+            var ackNum = firstAckSequenceNumber - i - 1;
+            if (AckSequenceNumbers.Contains(ackNum))
+            {
+                ackBits |= 1u << (int)i;
+            }
         }
+        writer.Write(ackBits);
+
+        // writer.Write(this.AckSequenceNumbers.Length);
+        // foreach (var ackSequenceNumber in this.AckSequenceNumbers)
+        // {
+        //     writer.Write(ackSequenceNumber);
+        // }
         this.SerializeProtocolPacket(writer);
     }
 
@@ -89,12 +104,20 @@ internal abstract class ProtocolPacket
         packet.SetChannelType(ppc);
         packet.SetSequenceNumber(seq);
 
-        int ackCount = reader.ReadInt32();
-        packet.AckSequenceNumbers = new ulong[ackCount];
-        for (int i = 0; i < ackCount; i++)
+        ulong firstSeqack = reader.ReadUInt64();
+        int ackBits = reader.ReadInt32();
+
+        var listOfAcks = new List<ulong>();
+
+        listOfAcks.Add(firstSeqack);
+        for (uint i = 0; i < 32; i++)
         {
-            packet.AckSequenceNumbers[i] = reader.ReadUInt64();
+            if ((ackBits & (1u << (int)i)) != 0)
+            {
+                listOfAcks.Add(firstSeqack - i - 1);
+            }
         }
+        packet.SetAckSequenceNumbers(listOfAcks.ToArray());
 
         packet.DeserializeProtocolPacket(reader);
         return packet;

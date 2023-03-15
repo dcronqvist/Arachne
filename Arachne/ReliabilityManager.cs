@@ -72,7 +72,7 @@ internal class ReliabilityManager
     public ulong[] GetNextAcksToSend()
     {
         var acks = new List<ulong>();
-        foreach (var (packet, seq) in this._receivedPacketsAwaitingAck.UnorderedItems.OrderBy(x => x.Item2))
+        foreach (var (packet, seq) in this._receivedPacketsAwaitingAck.UnorderedItems.OrderBy(x => x.Item2).TakeLast(32))
         {
             acks.Add(packet.SequenceNumber);
         }
