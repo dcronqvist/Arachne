@@ -47,7 +47,7 @@ internal class UDPSocketContext : ISocketContext
     private ThreadSafe<MovingAverage> _sentBytesPerSecond;
     private ThreadSafe<MovingAverage> _receivedBytesPerSecond;
 
-    public UDPSocketContext(int movingAverageLength)
+    public UDPSocketContext()
     {
         this._socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
         this._sentBytesPerSecond = new(new MovingAverage(TimeSpan.FromSeconds(1)));

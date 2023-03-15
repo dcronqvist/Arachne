@@ -55,7 +55,7 @@ public sealed class Server
     public event EventHandler<ConnectionEventArgs>? ConnectionTerminated;
     public event EventHandler<ConnectionEventArgs>? ClientDisconnected;
 
-    public Server(int maxConns, string address, int port, uint protocolID, IAuthenticator authenticator, IServerInfoProvider infoProvider, params uint[] supportedClientProtocols) : this(maxConns, address, port, protocolID, authenticator, new UDPSocketContext(5), infoProvider, supportedClientProtocols)
+    public Server(int maxConns, string address, int port, uint protocolID, IAuthenticator authenticator, IServerInfoProvider infoProvider, params uint[] supportedClientProtocols) : this(maxConns, address, port, protocolID, authenticator, new UDPSocketContext(), infoProvider, supportedClientProtocols)
     { }
 
     public Server(int maxConns, string address, int port, uint protocolID, IAuthenticator authenticator, ISocketContext context, IServerInfoProvider infoProvider, params uint[] supportedClientProtocols)

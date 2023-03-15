@@ -51,7 +51,7 @@ public sealed class Client
     public event EventHandler<ulong>? ServerAckedPacket;
     public event EventHandler<ulong>? ResentPacket;
 
-    public Client(uint protocolID, IAuthenticator authenticator) : this(protocolID, authenticator, new UDPSocketContext(5))
+    public Client(uint protocolID, IAuthenticator authenticator) : this(protocolID, authenticator, new UDPSocketContext())
     { }
 
     public Client(uint protocolID, IAuthenticator auth, ISocketContext context)
@@ -69,6 +69,16 @@ public sealed class Client
                 this.ServerAckedPacket?.Invoke(this, e);
             };
         });
+    }
+
+    public string GetConnectedToHost()
+    {
+        return this._host;
+    }
+
+    public int GetConnectedToPort()
+    {
+        return this._port;
     }
 
     public ISocketContext GetSocketContext()
@@ -436,7 +446,7 @@ public sealed class Client
 
     public static async Task<T> RequestServerInfoAsync<T>(string host, int port, int timeout = 2000) where T : ISerializable
     {
-        return await RequestServerInfoAsync<T>(new UDPSocketContext(5), host, port, timeout);
+        return await RequestServerInfoAsync<T>(new UDPSocketContext(), host, port, timeout);
     }
 
     public static async Task<T> RequestServerInfoAsync<T>(ISocketContext context, string host, int port, int timeout = 2000) where T : ISerializable
