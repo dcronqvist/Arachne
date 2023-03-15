@@ -286,6 +286,13 @@ public sealed class Server
             return;
         }
 
+        if (packet.PacketType == ProtocolPacketType.Ping)
+        {
+            var ping = (Ping)packet;
+            var pong = new Pong() { PongSeq = ping.SequenceNumber };
+            this.SendPacketTo(pong, sender);
+        }
+
         var connection = this.GetConnectionForEndPoint(sender);
         connection._lastReceivedPacketTime = DateTime.Now;
         connection._reliabilityManager.LockedAction(rm => rm!.AddReceivedPacket(packet));

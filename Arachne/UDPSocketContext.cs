@@ -5,23 +5,22 @@ namespace Arachne;
 
 internal class MovingAverage
 {
-    public int Size { get; private set; }
-    private Queue<uint> _values;
+    public TimeSpan TimeToSave { get; }
+    private Queue<(DateTime, uint)> _values;
 
-    internal MovingAverage(int size)
+    internal MovingAverage(TimeSpan timeToSave)
     {
-        this.Size = size;
+        this.TimeToSave = timeToSave;
         this._values = new();
     }
 
     internal void Add(uint value)
     {
-        if (this._values.Count == this.Size)
-        {
-            this._values.Dequeue();
-        }
+        var now = DateTime.Now;
 
-        this._values.Enqueue(value);
+        while (this._values.Count > 0 && DateTime.Now - this._values.Peek().Item1 > this.TimeToSave)
+            this._values.Dequeue();
+        this._values.Enqueue((now, value));
     }
 
     internal uint GetAverage()
@@ -32,12 +31,12 @@ internal class MovingAverage
         }
 
         var sum = 0u;
-        foreach (var value in this._values)
+        foreach (var (time, value) in this._values)
         {
             sum += value;
         }
 
-        return sum / (uint)this._values.Count;
+        return (uint)(sum / this._values.Count);
     }
 }
 
@@ -51,8 +50,8 @@ internal class UDPSocketContext : ISocketContext
     public UDPSocketContext(int movingAverageLength)
     {
         this._socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-        this._sentBytesPerSecond = new(new MovingAverage(movingAverageLength));
-        this._receivedBytesPerSecond = new(new MovingAverage(movingAverageLength));
+        this._sentBytesPerSecond = new(new MovingAverage(TimeSpan.FromSeconds(1)));
+        this._receivedBytesPerSecond = new(new MovingAverage(TimeSpan.FromSeconds(1)));
     }
 
     public void Bind(IPEndPoint endPoint)

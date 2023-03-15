@@ -419,7 +419,7 @@ public class ConnectTests
     }
 
     [Theory]
-    [InlineData(20, 0.5f, 20)]
+    [InlineData(20, 0.3f, 20)]
     public async Task Test15(int amount, float packetLoss, int latency)
     {
         var fakeNet = new FakeNetwork(0, 0, latency); // 0% packet loss
@@ -441,6 +441,13 @@ public class ConnectTests
 
         var connection = server.GetClientConnection(id);
 
+        client.ReceivedData += (sender, e) =>
+        {
+            var data = e.Data;
+            output.WriteLine($"Client received data {BitConverter.ToInt32(data)}");
+            received.LockedAction(r => r.Add(BitConverter.ToInt32(data)));
+        };
+
         foreach (var val in valuesToSend)
         {
             server.SendToClient(BitConverter.GetBytes(val), connection, Packets.ChannelType.Reliable);
@@ -450,11 +457,39 @@ public class ConnectTests
             received.LockedAction(r => r.Add(BitConverter.ToInt32(data)));
         }
 
+        await Task.Delay(10000);
+
         Assert.Equal(20, received.Value.Count);
         // Assert that all received values are in the valuesToSend set.
         Assert.True(received.Value.All(v => valuesToSend.Contains(v)), "Received values are not in the valuesToSend set.");
         // And the other way around.
         Assert.True(valuesToSend.All(v => received.Value.Contains(v)), "ValuesToSend values are not in the received set.");
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(20)]
+    [InlineData(40)]
+    [InlineData(60)]
+    [InlineData(100)]
+    public async Task Test16(int latency)
+    {
+        var fakeNet = new FakeNetwork(0, 0.0f, latency);
+        var socketContextServer = new FakeSocketContext(fakeNet);
+        var socketContextClient = new FakeSocketContext(fakeNet);
+
+        var server = new Server(10, "127.0.0.1", 8893, 5, IAuthenticator.NoAuth, socketContextServer, IServerInfoProvider.Default);
+        var client = new Client(5, IAuthenticator.NoAuth, socketContextClient);
+
+        await server.StartAsync();
+
+        var (code, id) = await client.ConnectAsync("127.0.0.1", 8893, IAuthenticator.NoAuthResponse, timeout: 2000);
+        await Task.Delay(3000); // Wait 3 seconds for ping to stabilize
+
+        Assert.Equal(Constant.SUCCESS, code);
+
+        var ping = client.GetPing();
+        Assert.True(ping > 0, "Ping is not greater than 0");
     }
 }
 

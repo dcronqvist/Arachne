@@ -13,6 +13,9 @@ internal enum ProtocolPacketType : byte
 
     ServerInfoRequest = 0b1000,
     ServerInfoResponse = 0b1001,
+
+    Ping = 0b1010,
+    Pong = 0b1011
 }
 
 [Flags]
@@ -147,6 +150,10 @@ internal abstract class ProtocolPacket
                 return new ServerInfoRequest();
             case ProtocolPacketType.ServerInfoResponse:
                 return new ServerInfoResponse(new byte[0]);
+            case ProtocolPacketType.Ping:
+                return new Ping();
+            case ProtocolPacketType.Pong:
+                return new Pong();
                 // default:
                 //     throw new Exception("Invalid packet type");
         }

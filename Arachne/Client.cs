@@ -26,6 +26,8 @@ public sealed class Client
     private IPEndPoint? _connectedTo;
     private uint _protocolID;
     private DateTime _lastPacketSent;
+    private string _host;
+    private int _port;
 
     private BufferBlock<byte[]> _sendQueue;
     private Task? _sendTask;
@@ -35,6 +37,8 @@ public sealed class Client
     private CancellationTokenSource _cts;
     private IAuthenticator _authenticator;
     private DeliveryService<ProtocolPacket> _deliveryService = new();
+    private ThreadSafe<MovingAverage> _pingAverage = new(new(TimeSpan.FromSeconds(1)));
+    private ThreadSafe<Dictionary<ulong, DateTime>> _pingTimes = new(new());
 
     // Connection stuff
     private ulong _nextSequenceNumber = 1;
@@ -84,6 +88,8 @@ public sealed class Client
         tokenSource.CancelAfter(timeout);
         var token = tokenSource.Token;
         var loopToken = this._cts.Token;
+        this._host = address;
+        this._port = port;
 
         this._socket.Connect(new IPEndPoint(IPAddress.Parse(address), port));
 
@@ -133,6 +139,7 @@ public sealed class Client
 
         this._sendTask = Task.Run(() => this.SendLoopAsync(loopToken));
         _ = Task.Run(() => this.KeepAliveLoopAsync(loopToken));
+        _ = Task.Run(() => this.PingLoopAsync(loopToken));
 
         while (!this._readyToSend || !this._readyToReceive)
         {
@@ -140,6 +147,18 @@ public sealed class Client
         }
 
         return (Constant.SUCCESS, connectResponse.ClientID);
+    }
+
+    private async Task PingLoopAsync(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            var now = DateTime.Now;
+            var seq = this.SendPacket(new Ping());
+            this._pingTimes.LockedAction(pt => pt!.Add(seq, now));
+
+            await Task.Delay(300);
+        }
     }
 
     private async Task ReliabilityLoopAsync(CancellationToken token)
@@ -271,6 +290,25 @@ public sealed class Client
             return;
         }
 
+        if (packet.PacketType == ProtocolPacketType.Pong)
+        {
+            var seqPong = (packet as Pong)!.PongSeq;
+            var ping = this._pingTimes.LockedAction(pt =>
+            {
+                if (pt!.TryGetValue(seqPong, out var sentTime))
+                {
+                    var now = DateTime.Now;
+                    return (now - sentTime).Milliseconds;
+                }
+                return 0;
+            });
+
+            this._pingAverage.LockedAction(pa =>
+            {
+                pa!.Add((uint)ping);
+            });
+        }
+
         this._reliabilityManager.LockedAction(rm =>
         {
             rm!.AddReceivedPacket(packet);
@@ -326,6 +364,11 @@ public sealed class Client
     }
 
     // PUBLIC API
+
+    public uint GetPing()
+    {
+        return this._pingAverage.LockedAction(p => p!.GetAverage());
+    }
 
     public ulong SendToServer(byte[] data, ChannelType channel)
     {
