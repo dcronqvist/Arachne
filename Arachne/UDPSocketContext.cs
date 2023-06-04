@@ -40,18 +40,55 @@ internal class MovingAverage
     }
 }
 
+internal class MovingSum
+{
+    public TimeSpan TimeToSave { get; }
+    private Queue<(DateTime, uint)> _values;
+
+    internal MovingSum(TimeSpan timeToSave)
+    {
+        this.TimeToSave = timeToSave;
+        this._values = new();
+    }
+
+    internal void Add(uint value)
+    {
+        var now = DateTime.Now;
+
+        while (this._values.Count > 0 && DateTime.Now - this._values.Peek().Item1 > this.TimeToSave)
+            this._values.Dequeue();
+        this._values.Enqueue((now, value));
+    }
+
+    internal uint GetSum()
+    {
+        if (this._values.Count == 0)
+        {
+            return 0;
+        }
+
+        var sum = 0u;
+        foreach (var (time, value) in this._values)
+        {
+            sum += value;
+        }
+
+        return sum;
+    }
+}
+
 internal class UDPSocketContext : ISocketContext
 {
     private Socket _socket;
     public int BoundPort => this._socket == null ? 0 : ((IPEndPoint)this._socket.LocalEndPoint!).Port;
-    private ThreadSafe<MovingAverage> _sentBytesPerSecond;
-    private ThreadSafe<MovingAverage> _receivedBytesPerSecond;
+    private ThreadSafe<MovingSum> _sentBytesPerSecond;
+    private ThreadSafe<MovingSum> _receivedBytesPerSecond;
 
     public UDPSocketContext()
     {
         this._socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-        this._sentBytesPerSecond = new(new MovingAverage(TimeSpan.FromSeconds(1)));
-        this._receivedBytesPerSecond = new(new MovingAverage(TimeSpan.FromSeconds(1)));
+        this._sentBytesPerSecond = new(new MovingSum(TimeSpan.FromSeconds(1)));
+        this._receivedBytesPerSecond = new(new MovingSum(TimeSpan.FromSeconds(1)));
     }
 
     public void Bind(IPEndPoint endPoint)
@@ -116,11 +153,11 @@ internal class UDPSocketContext : ISocketContext
 
     public uint GetSentBytesPerSecond()
     {
-        return this._sentBytesPerSecond.LockedAction(q => q!.GetAverage());
+        return this._sentBytesPerSecond.LockedAction(q => q!.GetSum());
     }
 
     public uint GetReceivedBytesPerSecond()
     {
-        return this._receivedBytesPerSecond.LockedAction(q => q!.GetAverage());
+        return this._receivedBytesPerSecond.LockedAction(q => q!.GetSum());
     }
 }
